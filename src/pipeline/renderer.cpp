@@ -127,26 +127,52 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 	// ==========================
 	
 
-	for (int i = 0;i < render_list.size(); i++) {
-		if (!render_list[i].material) {
+    // Partition renderables into opaque (including MASK) and transparent (BLEND)
+	opaque_list.clear();
+	transparent_list.clear();
+	for (size_t i = 0; i < render_list.size(); i++) {
+		if (!render_list[i].material)
 			continue;
-		}
 
-		if (render_list[i].material->color.w == 1) {
-			opaque_list.push_back(render_list[i]);
-		}
-		else{
+		if (render_list[i].material->alpha_mode == SCN::eAlphaMode::BLEND)
 			transparent_list.push_back(render_list[i]);
-		}
+		else
+			opaque_list.push_back(render_list[i]);
 	}
 
-	for (int i = 0; i < transparent_list.size(); ++i) {
-		
-		std::sort(transparent_list.begin(), transparent_list.end(), )
+	// compute distances to camera and sort
+	std::vector<std::pair<float, sRenderable>> opaque_pairs;
+	std::vector<std::pair<float, sRenderable>> transparent_pairs;
+
+	for (auto &r : opaque_list) {
+		Vector3f pos = r.model.getTranslation();
+		float dist = camera->eye.distance(pos);
+		opaque_pairs.push_back(std::make_pair(dist, r));
 	}
-	for (sRenderable call : render_list) {
-		renderMeshWithMaterial(call.model, call.mesh, call.material);
+	
+	for (auto &r : transparent_list) {
+		Vector3f pos = r.model.getTranslation();
+		float dist = camera->eye.distance(pos);
+		transparent_pairs.push_back(std::make_pair(dist, r));
 	}
+
+	// Opaques: front-to-back (closest first) to help early z-rejection
+	std::sort(opaque_pairs.begin(), opaque_pairs.end(), [](const std::pair<float,sRenderable>& a, const std::pair<float,sRenderable>& b){
+		return a.first < b.first; // smaller distance first
+	});
+
+	// Transparents: back-to-front (furthest first) for correct blending
+	std::sort(transparent_pairs.begin(), transparent_pairs.end(), [](const std::pair<float,sRenderable>& a, const std::pair<float,sRenderable>& b){
+		return a.first > b.first; // larger distance first
+	});
+
+	// Render opaque objects
+	for (auto &p : opaque_pairs)
+		renderMeshWithMaterial(p.second.model, p.second.mesh, p.second.material);
+
+	// Render transparent objects with depth writes disabled (but depth test still enabled)
+	for (auto &p : transparent_pairs)
+		renderMeshWithMaterial(p.second.model, p.second.mesh, p.second.material);
 }
 
 
