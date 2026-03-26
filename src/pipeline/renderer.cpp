@@ -79,7 +79,8 @@ void Renderer::parseSceneEntities(SCN::Scene* scene, Camera* cam) {
 
 	for (int i = 0; i < scene->entities.size(); i++) {
 		BaseEntity* entity = scene->entities[i];
-
+		
+		
 		if (!entity->visible) {
 			continue;
 		}
@@ -88,6 +89,7 @@ void Renderer::parseSceneEntities(SCN::Scene* scene, Camera* cam) {
 			PrefabEntity* e = (PrefabEntity*)entity;
 
 			parseNode(&(entity->root));
+			
 		}
 		// Store Prefab Entitys
 		// ...
@@ -98,6 +100,9 @@ void Renderer::parseSceneEntities(SCN::Scene* scene, Camera* cam) {
 	}
 	
 }
+
+std::vector<sRenderable> opaque_list;
+std::vector<sRenderable> transparent_list;
 
 void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 {
@@ -120,6 +125,25 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 	// HERE =====================
 	// TODO: RENDER RENDERABLES
 	// ==========================
+	
+
+	for (int i = 0;i < render_list.size(); i++) {
+		if (!render_list[i].material) {
+			continue;
+		}
+
+		if (render_list[i].material->color.w == 1) {
+			opaque_list.push_back(render_list[i]);
+		}
+		else{
+			transparent_list.push_back(render_list[i]);
+		}
+	}
+
+	for (int i = 0; i < transparent_list.size(); ++i) {
+		
+		std::sort(transparent_list.begin(), transparent_list.end(), )
+	}
 	for (sRenderable call : render_list) {
 		renderMeshWithMaterial(call.model, call.mesh, call.material);
 	}
@@ -189,7 +213,6 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 	if (!shader)
 		return;
 	shader->enable();
-
 	material->bind(shader);
 
 	//upload uniforms
