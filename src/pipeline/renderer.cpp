@@ -87,9 +87,10 @@ void Renderer::parseSceneEntities(SCN::Scene* scene, Camera* cam) {
 
 		if (entity->getType() == eEntityType::PREFAB){
 			PrefabEntity* e = (PrefabEntity*)entity;
-
-			parseNode(&(entity->root));
-			
+			parseNode(&(entity->root));	
+		}
+		else if (entity->getType() == eEntityType::LIGHT) {
+			LightEntity* l = (LightEntity*)entity;
 		}
 		// Store Prefab Entitys
 		// ...
@@ -168,12 +169,12 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 
 	// Render opaque objects
 	for (auto &p : opaque_pairs)
-		if (camera->testPointInFrustum(p.second.model.getTranslation()))
+		if (camera->testBoxInFrustum(p.second.mesh->box.center, p.second.mesh->box.halfsize))
 			renderMeshWithMaterial(p.second.model, p.second.mesh, p.second.material);
 
 	// Render transparent objects with depth writes disabled (but depth test still enabled)
 	for (auto &p : transparent_pairs)
-		if (camera->testPointInFrustum(p.second.model.getTranslation()))
+		if (camera->testBoxInFrustum(p.second.mesh->box.center, p.second.mesh->box.halfsize))
 			renderMeshWithMaterial(p.second.model, p.second.mesh, p.second.material);
 }
 

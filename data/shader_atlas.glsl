@@ -4,6 +4,7 @@ texture basic.vs texture.fs
 skybox basic.vs skybox.fs
 depth quad.vs depth.fs
 multi basic.vs multi.fs
+shader_lab1 basic.vs texture.fs
 
 \perturbNormal
 
@@ -48,6 +49,8 @@ uniform vec3 u_camera_pos;
 
 uniform mat4 u_model;
 uniform mat4 u_viewprojection;
+
+
 
 //this will store the color for the pixel shader
 out vec3 v_position;
