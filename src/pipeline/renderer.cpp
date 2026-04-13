@@ -54,6 +54,7 @@ struct sRenderable
 };
 
 std::vector<sRenderable> render_list;
+std::vector<LightEntity*> lights_list;
 
 void parseNode(Node* node){
 	if (!node) {
@@ -76,7 +77,7 @@ void Renderer::parseSceneEntities(SCN::Scene* scene, Camera* cam) {
 	// TODO: GENERATE RENDERABLES
 	// ==========================
 	render_list.clear();
-
+	lights_list.clear();
 	for (int i = 0; i < scene->entities.size(); i++) {
 		BaseEntity* entity = scene->entities[i];
 		
@@ -91,6 +92,7 @@ void Renderer::parseSceneEntities(SCN::Scene* scene, Camera* cam) {
 		}
 		else if (entity->getType() == eEntityType::LIGHT) {
 			LightEntity* l = (LightEntity*)entity;
+			lights_list.push_back(l);
 		}
 		// Store Prefab Entitys
 		// ...
@@ -99,6 +101,8 @@ void Renderer::parseSceneEntities(SCN::Scene* scene, Camera* cam) {
 		// Store Lights
 		// ...
 	}
+
+	
 	
 }
 
@@ -119,6 +123,7 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	GFX::checkGLErrors();
 
+	
 	//render skybox
 	if(skybox_cubemap)
 		renderSkybox(skybox_cubemap);
@@ -176,6 +181,7 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 	for (auto &p : transparent_pairs)
 		if (camera->testBoxInFrustum(p.second.mesh->box.center, p.second.mesh->box.halfsize))
 			renderMeshWithMaterial(p.second.model, p.second.mesh, p.second.material);
+	
 }
 
 
@@ -219,6 +225,11 @@ void Renderer::renderSkybox(GFX::Texture* cubemap)
 	glEnable(GL_DEPTH_TEST);
 }
 
+std::vector<Vector3f> light_colors;
+std::vector<Vector3f> light_intensities;
+std::vector<Vector3f> light_positions;
+
+
 // Renders a mesh given its transform and material
 void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN::Material* material)
 {
@@ -255,6 +266,25 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 	float t = getTime();
 	shader->setUniform("u_time", t );
 
+	shader->setUniform("u_Ia", scene->ambient_light);
+	shader->setUniform("u_num_lights", (int)lights_list.size());
+
+	// Clear light vectors before filling
+	light_colors.clear();
+	light_positions.clear();
+	light_intensities.clear();
+
+	for (auto& p : lights_list) {
+		light_colors.push_back(p->color);
+		light_positions.push_back(p->root.model.getTranslation());
+		light_intensities.push_back(p->intensity);
+	}
+	
+	shader->setUniform3Array("u_light_color", (float*)light_colors.data(), (int)lights_list.size());
+	shader->setUniform1Array("u_intensity", (float*)light_intensities.data(), (int)lights_list.size());
+	shader->setUniform3Array("u_light_position", (float*)light_positions.data(), (int)lights_list.size());
+	
+
 	// Render just the verticies as a wireframe
 	if (render_wireframe)
 		glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
@@ -264,7 +294,7 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 
 	//disable shader
 	shader->disable();
-
+	
 	//set the render state as it was before to avoid problems with future renders
 	glDisable(GL_BLEND);
 	glPolygonMode( GL_FRONT_AND_BACK, GL_FILL );

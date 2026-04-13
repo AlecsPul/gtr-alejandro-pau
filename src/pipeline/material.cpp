@@ -93,9 +93,11 @@ void Material::bind(GFX::Shader* shader) {
 		// We always force a default albedo texture
 		if (texture == NULL)
 			texture = GFX::Texture::getWhiteTexture(); //a 1x1 white texture
-
+		shininess = 8.0f;
+		
 		shader->setUniform("u_color", color);
-
+		shader->setUniform("u_shininess", shininess);
+		
 		if (texture)
 			shader->setUniform("u_texture", texture, 0);
 

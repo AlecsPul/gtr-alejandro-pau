@@ -4,7 +4,7 @@ texture basic.vs texture.fs
 skybox basic.vs skybox.fs
 depth quad.vs depth.fs
 multi basic.vs multi.fs
-shader_lab1 basic.vs texture.fs
+
 
 \perturbNormal
 
@@ -112,17 +112,26 @@ void main()
 \texture.fs
 
 #version 330 core
-
+const int MAX_LIGHTS = 8;
 in vec3 v_position;
 in vec3 v_world_position;
 in vec3 v_normal;
 in vec2 v_uv;
 in vec4 v_color;
 
+uniform vec3 u_light_position[MAX_LIGHTS];
+uniform vec3 u_Ia;
+
+
+uniform float u_shininess;
+uniform vec3 u_camera_position;
+uniform float u_intensity[MAX_LIGHTS];
+uniform vec3 u_light_color[MAX_LIGHTS];
 uniform vec4 u_color;
 uniform sampler2D u_texture;
 uniform float u_time;
 uniform float u_alpha_cutoff;
+uniform int u_num_lights;
 
 out vec4 FragColor;
 
@@ -135,7 +144,26 @@ void main()
 	if(color.a < u_alpha_cutoff)
 		discard;
 
-	FragColor = color;
+	vec3 out_color = vec3(0.0);
+	out_color +=  (u_Ia * color.rgb);
+	for(int i = 0; i < u_num_lights; i++){
+		float light_intensity =  u_intensity[i]/(pow(distance(u_light_position[i], v_world_position), 2.0));
+		vec3 N = normalize(v_normal);
+		vec3 L = normalize(u_light_position[i] - v_world_position);
+		float N_dot_L = clamp(dot(L,N), 0.0, 1.0);
+		vec3 diffuse = u_light_color[i] * color.rgb *N_dot_L * light_intensity;
+		out_color += diffuse;
+
+		vec3 R = normalize(reflect(-L, N));
+		vec3 V = normalize(u_camera_position - v_world_position);
+		float R_dot_V = clamp(dot(R,V), 0.0, 1.0);
+		vec3 specular = u_light_color[i]*pow(R_dot_V, u_shininess) * light_intensity;
+		out_color += specular;
+
+		FragColor = vec4(out_color, 1.0);
+	}
+
+	
 }
 
 
