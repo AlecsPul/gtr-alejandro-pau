@@ -225,9 +225,7 @@ void Renderer::renderSkybox(GFX::Texture* cubemap)
 	glEnable(GL_DEPTH_TEST);
 }
 
-std::vector<Vector3f> light_colors;
-std::vector<Vector3f> light_intensities;
-std::vector<Vector3f> light_positions;
+
 
 
 // Renders a mesh given its transform and material
@@ -270,20 +268,25 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 	shader->setUniform("u_num_lights", (int)lights_list.size());
 
 	// Clear light vectors before filling
-	light_colors.clear();
-	light_positions.clear();
-	light_intensities.clear();
+	std::vector<Vector3f> light_colors;
+	std::vector<Vector3f> light_intensities;
+	std::vector<Vector3f> light_positions;
+	std::vector<int> light_types;
+	std::vector<Vector3f> light_directions;
 
 	for (auto& p : lights_list) {
 		light_colors.push_back(p->color);
 		light_positions.push_back(p->root.model.getTranslation());
 		light_intensities.push_back(p->intensity);
+		light_types.push_back(p->light_type);
+		light_directions.push_back(p->root.model.frontVector());
 	}
 	
 	shader->setUniform3Array("u_light_color", (float*)light_colors.data(), (int)lights_list.size());
 	shader->setUniform1Array("u_intensity", (float*)light_intensities.data(), (int)lights_list.size());
 	shader->setUniform3Array("u_light_position", (float*)light_positions.data(), (int)lights_list.size());
-	
+	shader->setUniform1Array("u_light_type", light_types.data(), (int)lights_list.size());
+	shader->setUniform3Array("u_light_direction", (float*)light_directions.data(), (int)lights_list.size());
 
 	// Render just the verticies as a wireframe
 	if (render_wireframe)

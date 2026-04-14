@@ -127,6 +127,8 @@ uniform float u_shininess;
 uniform vec3 u_camera_position;
 uniform float u_intensity[MAX_LIGHTS];
 uniform vec3 u_light_color[MAX_LIGHTS];
+uniform int u_light_type[MAX_LIGHTS];
+uniform vec3 u_light_direction[MAX_LIGHTS];
 uniform vec4 u_color;
 uniform sampler2D u_texture;
 uniform float u_time;
@@ -149,7 +151,13 @@ void main()
 	for(int i = 0; i < u_num_lights; i++){
 		float light_intensity =  u_intensity[i]/(pow(distance(u_light_position[i], v_world_position), 2.0));
 		vec3 N = normalize(v_normal);
-		vec3 L = normalize(u_light_position[i] - v_world_position);
+		vec3 L;
+		if(u_light_type[i] != 3) {
+			L = normalize(u_light_position[i] - v_world_position);
+		} else {
+			L = normalize(u_light_direction[i]);
+			light_intensity = 1.0;
+		}
 		float N_dot_L = clamp(dot(L,N), 0.0, 1.0);
 		vec3 diffuse = u_light_color[i] * color.rgb *N_dot_L * light_intensity;
 		out_color += diffuse;
@@ -157,10 +165,10 @@ void main()
 		vec3 R = normalize(reflect(-L, N));
 		vec3 V = normalize(u_camera_position - v_world_position);
 		float R_dot_V = clamp(dot(R,V), 0.0, 1.0);
-		vec3 specular = u_light_color[i]*pow(R_dot_V, u_shininess) * light_intensity;
+		vec3 specular = u_light_color[i]* color.rgb * pow(R_dot_V, u_shininess) * light_intensity;
 		out_color += specular;
 
-		FragColor = vec4(out_color, 1.0);
+		FragColor = vec4(out_color, color.a);
 	}
 
 	
