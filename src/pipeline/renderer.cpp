@@ -173,14 +173,20 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 	});
 
 	// Render opaque objects
-	for (auto &p : opaque_pairs)
-		if (camera->testBoxInFrustum(p.second.mesh->box.center, p.second.mesh->box.halfsize))
+	for (auto& p : opaque_pairs) {
+		BoundingBox mesh_box = transformBoundingBox(p.second.model, p.second.mesh->box);
+		if (camera->testBoxInFrustum(mesh_box.center, mesh_box.halfsize)) {
 			renderMeshWithMaterial(p.second.model, p.second.mesh, p.second.material);
-
+		}
+	}
+	
 	// Render transparent objects with depth writes disabled (but depth test still enabled)
-	for (auto &p : transparent_pairs)
-		if (camera->testBoxInFrustum(p.second.mesh->box.center, p.second.mesh->box.halfsize))
+	for (auto& p : transparent_pairs) {
+		BoundingBox mesh_box = transformBoundingBox(p.second.model, p.second.mesh->box);
+		if (camera->testBoxInFrustum(mesh_box.center, mesh_box.halfsize)) {
 			renderMeshWithMaterial(p.second.model, p.second.mesh, p.second.material);
+		}
+	}
 	
 }
 
