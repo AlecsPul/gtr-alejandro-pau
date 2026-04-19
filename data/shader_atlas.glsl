@@ -112,6 +112,7 @@ void main()
 \texture.fs
 
 #version 330 core
+#include "perturbNormal"
 const int MAX_LIGHTS = 8;
 in vec3 v_position;
 in vec3 v_world_position;
@@ -134,7 +135,8 @@ uniform sampler2D u_texture;
 uniform float u_time;
 uniform float u_alpha_cutoff;
 uniform int u_num_lights;
-
+uniform vec2 u_cone_infos[MAX_LIGHTS]; // x=alpha_min, y=alpha_max
+uniform sampler2D u_normal_map;
 out vec4 FragColor;
 
 void main()
@@ -142,35 +144,64 @@ void main()
 	vec2 uv = v_uv;
 	vec4 color = u_color;
 	color *= texture( u_texture, v_uv );
-
 	if(color.a < u_alpha_cutoff)
 		discard;
 
 	vec3 out_color = vec3(0.0);
 	out_color +=  (u_Ia * color.rgb);
-	for(int i = 0; i < u_num_lights; i++){
-		float light_intensity =  u_intensity[i]/(pow(distance(u_light_position[i], v_world_position), 2.0));
-		vec3 N = normalize(v_normal);
-		vec3 L;
-		if(u_light_type[i] != 3) {
-			L = normalize(u_light_position[i] - v_world_position);
-		} else {
-			L = normalize(u_light_direction[i]);
-			light_intensity = 1.0;
+	
+	vec3 L;
+	float N_dot_L;
+	vec3 R;
+	float light_intensity;
+	vec3 V;
+	float R_dot_V;
+	vec3 D;
+
+	vec3 texture_normal = texture(u_normal_map, v_uv).xyz;
+	texture_normal = (texture_normal * 2.0) - 1.0;
+	texture_normal = normalize(texture_normal);
+	vec3 N = perturbNormal(normalize(v_normal), v_world_position, v_uv, texture_normal);
+
+	for(int i = 0; i < MAX_LIGHTS; i++){
+		//Attenuation
+
+		if(i < u_num_lights){
+			light_intensity = u_intensity[i]/(pow(distance(u_light_position[i], v_world_position), 2.0));
+			//Difuse
+		
+			D = normalize(u_light_direction[i]);
+			if(u_light_type[i] == 3) {
+				L = D;
+				light_intensity = 1.0;
+			} 
+			else if(u_light_type[i] == 2){
+				L = normalize(u_light_position[i] - v_world_position);
+				if(clamp(dot(L, D), 0.0, 1.0) >= clamp(cos(u_cone_infos[i].y), 0.0, 1.0)){
+					light_intensity *= (clamp(dot(L, D), 0.0, 1.0) - clamp(cos(u_cone_infos[i].y), 0.0, 1.0)) / (clamp(cos(u_cone_infos[i].x), 0.0, 1.0) - clamp(cos(u_cone_infos[i].y), 0.0, 1.0));
+				}
+				else{
+					light_intensity = 0.0;
+				}
+			}
+			else {
+				L = normalize(u_light_position[i] - v_world_position);
+			}
+			N_dot_L = clamp(dot(L,N), 0.0, 1.0);
+			out_color += u_light_color[i] * color.rgb *N_dot_L * light_intensity;
+
+			//Specular
+			R = normalize(reflect(-L, N));
+			V = normalize(u_camera_position - v_world_position);
+			R_dot_V = clamp(dot(R,V), 0.0, 1.0);
+			out_color += u_light_color[i]* color.rgb * pow(R_dot_V, u_shininess) * light_intensity;
+
+			FragColor = vec4(out_color, color.a);
+		}	
+
 		}
-		float N_dot_L = clamp(dot(L,N), 0.0, 1.0);
-		vec3 diffuse = u_light_color[i] * color.rgb *N_dot_L * light_intensity;
-		out_color += diffuse;
-
-		vec3 R = normalize(reflect(-L, N));
-		vec3 V = normalize(u_camera_position - v_world_position);
-		float R_dot_V = clamp(dot(R,V), 0.0, 1.0);
-		vec3 specular = u_light_color[i]* color.rgb * pow(R_dot_V, u_shininess) * light_intensity;
-		out_color += specular;
-
-		FragColor = vec4(out_color, color.a);
-	}
-
+			
+		
 	
 }
 

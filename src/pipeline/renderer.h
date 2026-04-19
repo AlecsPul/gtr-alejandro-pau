@@ -26,6 +26,8 @@ namespace SCN {
 		bool render_wireframe;
 		bool render_boundaries;
 
+		bool multi_pass;
+
 		GFX::Texture* skybox_cubemap;
 
 		SCN::Scene* scene;

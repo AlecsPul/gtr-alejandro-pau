@@ -269,9 +269,10 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 	// Upload time, for cool shader effects
 	float t = getTime();
 	shader->setUniform("u_time", t );
+	int lights_num = (int)lights_list.size();
 
 	shader->setUniform("u_Ia", scene->ambient_light);
-	shader->setUniform("u_num_lights", (int)lights_list.size());
+	shader->setUniform("u_num_lights", lights_num);
 
 	// Clear light vectors before filling
 	std::vector<Vector3f> light_colors;
@@ -279,6 +280,7 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 	std::vector<Vector3f> light_positions;
 	std::vector<int> light_types;
 	std::vector<Vector3f> light_directions;
+	std::vector<Vector2f> cone_infos;
 
 	for (auto& p : lights_list) {
 		light_colors.push_back(p->color);
@@ -286,14 +288,16 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 		light_intensities.push_back(p->intensity);
 		light_types.push_back(p->light_type);
 		light_directions.push_back(p->root.model.frontVector());
+		cone_infos.push_back({ (float)(p->cone_info.x * DEG2RAD),(float)(p->cone_info.y * DEG2RAD) });
 	}
 	
-	shader->setUniform3Array("u_light_color", (float*)light_colors.data(), (int)lights_list.size());
-	shader->setUniform1Array("u_intensity", (float*)light_intensities.data(), (int)lights_list.size());
-	shader->setUniform3Array("u_light_position", (float*)light_positions.data(), (int)lights_list.size());
-	shader->setUniform1Array("u_light_type", light_types.data(), (int)lights_list.size());
-	shader->setUniform3Array("u_light_direction", (float*)light_directions.data(), (int)lights_list.size());
-
+	shader->setUniform3Array("u_light_color", (float*)light_colors.data(), lights_num);
+	shader->setUniform1Array("u_intensity", (float*)light_intensities.data(), lights_num);
+	shader->setUniform3Array("u_light_position", (float*)light_positions.data(), lights_num);
+	shader->setUniform1Array("u_light_type", light_types.data(), lights_num);
+	shader->setUniform3Array("u_light_direction", (float*)light_directions.data(), lights_num);
+	shader->setUniform2Array("u_cone_infos", (float*)cone_infos.data(), lights_num);
+	
 	// Render just the verticies as a wireframe
 	if (render_wireframe)
 		glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
@@ -316,9 +320,12 @@ void Renderer::showUI()
 		
 	ImGui::Checkbox("Wireframe", &render_wireframe);
 	ImGui::Checkbox("Boundaries", &render_boundaries);
-
+	
 	//add here your stuff
 	//...
+
+	ImGui::Checkbox("Multi pass", &multi_pass);
+	
 }
 
 #else
