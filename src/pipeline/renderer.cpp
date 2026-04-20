@@ -22,7 +22,7 @@ using namespace SCN;
 
 //some globals
 GFX::Mesh sphere;
-
+GFX::FBO* fbo;
 Renderer::Renderer(const char* shader_atlas_filename)
 {
 	render_wireframe = false;
@@ -30,6 +30,9 @@ Renderer::Renderer(const char* shader_atlas_filename)
 	scene = nullptr;
 	skybox_cubemap = nullptr;
 
+	Vector2 window_size = CORE::getWindowSize(); //Get window size so the fbo is correct for current window
+	fbo = new GFX::FBO();
+	fbo->setDepthOnly(window_size.x, window_size.y);
 	if (!GFX::Shader::LoadAtlas(shader_atlas_filename))
 		exit(1);
 	GFX::checkGLErrors();
@@ -115,7 +118,7 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 	setupScene();
 
 	parseSceneEntities(scene, camera);
-
+	
 	//set the clear color (the background color)
 	glClearColor(scene->background_color.x, scene->background_color.y, scene->background_color.z, 1.0);
 
@@ -172,6 +175,37 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 		return a.first > b.first; // larger distance first
 	});
 
+
+	Camera light_cam;
+	mat4 light_model = lights_list[3]->root.getGlobalMatrix();
+	vec3 light_pos = light_model.getTranslation();
+
+	light_cam.lookAt(light_pos, lights_list[3]->root.model.frontVector() * vec3(0.0f, 0.0f, -1.0f), vec3(0.0f, 1.0f, 0.0f));
+	float half_size = lights_list[3]->area / 2.0f;
+	light_cam.setOrthographic(-half_size, half_size, -half_size, half_size, lights_list[3]->near_distance, lights_list[3]->max_distance);
+
+	if (lights_list.size() > 0) {
+		fbo->bind();
+
+		// Disable color writes, only write to depth buffer
+		glColorMask(false, false, false, false);
+		glClear(GL_DEPTH_BUFFER_BIT);
+		glEnable(GL_DEPTH_TEST);
+
+		// Render opaque objects from light's perspective
+		for (auto& p : opaque_pairs) {
+			renderFBO(p.second.model, p.second.mesh, p.second.material, &light_cam, camera);
+		}
+		// Re-enable color writes and unbind FBO
+		glColorMask(true, true, true, true);
+		fbo->unbind();
+		
+	}
+	
+
+	glClearColor(scene->background_color.x, scene->background_color.y, scene->background_color.z, 1.0);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	GFX::checkGLErrors();
 	// Render opaque objects
 	for (auto& p : opaque_pairs) {
 		BoundingBox mesh_box = transformBoundingBox(p.second.model, p.second.mesh->box);
@@ -187,7 +221,22 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 			renderMeshWithMaterial(p.second.model, p.second.mesh, p.second.material);
 		}
 	}
+}
+
+
+void Renderer::renderFBO(Matrix44 model, GFX::Mesh* mesh, SCN::Material* material, Camera* light_cam, Camera* real_camera) {
 	
+	glDisable(GL_DEPTH_TEST);
+	
+	GFX::Shader* shader = GFX::Shader::Get("plain");
+	shader->enable();
+	shader->setUniform("u_shadowmap", fbo->depth_texture, 2);
+	shader->setUniform("u_viewprojection_light", light_cam->viewprojection_matrix );
+	shader->setUniform("u_camera_pos", light_cam->eye);
+	shader->setUniform("u_model", model);
+	mesh->render(GL_TRIANGLES);
+	shader->disable();
+	glEnable(GL_DEPTH_TEST);
 }
 
 

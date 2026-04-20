@@ -104,7 +104,7 @@ void Material::bind(GFX::Shader* shader) {
 			shader->setUniform("u_texture", texture, 0);
 		
 		if (normal_map)
-			shader->setUniform("u_normal_map", normal_map, 2);
+			shader->setUniform("u_normal_map", normal_map, 1);
 
 		// This is used to say which is the alpha threshold to what we should not paint a pixel on the screen (to cut polygons according to texture alpha)
 		shader->setUniform("u_alpha_cutoff", alpha_mode == SCN::eAlphaMode::MASK ? alpha_cutoff : 0.001f);

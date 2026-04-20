@@ -40,7 +40,7 @@ namespace SCN {
 
 		//add here your functions
 		//...
-
+		void renderFBO(const Matrix44 model, GFX::Mesh* mesh, SCN::Material* material, Camera* light_cam, Camera* real_camera);
 		void parseSceneEntities(SCN::Scene* scene, Camera* camera);
 
 		//renders several elements of the scene

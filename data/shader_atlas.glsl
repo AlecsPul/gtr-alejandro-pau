@@ -4,7 +4,7 @@ texture basic.vs texture.fs
 skybox basic.vs skybox.fs
 depth quad.vs depth.fs
 multi basic.vs multi.fs
-
+plain basic.vs plain.fs
 
 \perturbNormal
 
@@ -108,7 +108,30 @@ void main()
 	FragColor = u_color;
 }
 
+\plain.fs
 
+#version 330 core
+
+in vec3 v_world_position;
+out vec4 FragColor;
+uniform sampler2D u_shadowmap;
+uniform mat4 u_viewprojection_light;
+void main()
+{
+	vec4 proj_pos = u_viewprojection_light * vec4(v_world_position, 1.0);
+	proj_pos /= proj_pos.w;
+
+	vec4 shadowmap_depth = texture(u_shadowmap, proj_pos.xy * 0.5 + 0.5); 
+	
+	float proj_depth = proj_pos.z; 
+	// Change projected depth to shadow map range from Clip[-1,1] to Texture[0,1]
+	proj_depth = proj_depth * 0.5 + 0.5;
+
+	if(proj_depth > shadowmap_depth.r) 
+		FragColor = vec4(1.0, 1.0, 1.0, 1.0); // In shadow
+	else
+		FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+}
 \texture.fs
 
 #version 330 core
