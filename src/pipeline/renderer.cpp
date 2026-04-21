@@ -126,11 +126,6 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	GFX::checkGLErrors();
 
-	
-	//render skybox
-	if(skybox_cubemap)
-		renderSkybox(skybox_cubemap);
-
 	// HERE =====================
 	// TODO: RENDER RENDERABLES
 	// ==========================
@@ -180,7 +175,7 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 	mat4 light_model = lights_list[3]->root.getGlobalMatrix();
 	vec3 light_pos = light_model.getTranslation();
 
-	light_cam.lookAt(light_pos, lights_list[3]->root.model.frontVector() * vec3(0.0f, 0.0f, -1.0f), vec3(0.0f, 1.0f, 0.0f));
+	light_cam.lookAt(light_pos, light_model * vec3(0.0f, 0.0f, -1.0f), vec3(0.0f, 1.0f, 0.0f));
 	float half_size = lights_list[3]->area / 2.0f;
 	light_cam.setOrthographic(-half_size, half_size, -half_size, half_size, lights_list[3]->near_distance, lights_list[3]->max_distance);
 
@@ -191,52 +186,57 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 		glColorMask(false, false, false, false);
 		glClear(GL_DEPTH_BUFFER_BIT);
 		glEnable(GL_DEPTH_TEST);
+		glEnable(GL_CULL_FACE);
+		glFrontFace(GL_CW); // treat CW as front so CCW (actual fronts) get culled = reduces shadow acne
 
 		// Render opaque objects from light's perspective
 		for (auto& p : opaque_pairs) {
-			renderFBO(p.second.model, p.second.mesh, p.second.material, &light_cam, camera);
+			renderFBO(p.second.model, p.second.mesh, p.second.material, &light_cam);
 		}
 		// Re-enable color writes and unbind FBO
 		glColorMask(true, true, true, true);
 		fbo->unbind();
+		glFrontFace(GL_CCW);
+		glDisable(GL_CULL_FACE);
 		
 	}
 	
-
+		
 	glClearColor(scene->background_color.x, scene->background_color.y, scene->background_color.z, 1.0);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	GFX::checkGLErrors();
+
+	//render skybox
+	if (skybox_cubemap)
+		renderSkybox(skybox_cubemap);
+
 	// Render opaque objects
 	for (auto& p : opaque_pairs) {
 		BoundingBox mesh_box = transformBoundingBox(p.second.model, p.second.mesh->box);
 		if (camera->testBoxInFrustum(mesh_box.center, mesh_box.halfsize)) {
-			renderMeshWithMaterial(p.second.model, p.second.mesh, p.second.material);
+			renderMeshWithMaterial(p.second.model, p.second.mesh, p.second.material, &light_cam);
 		}
 	}
-	
+
 	// Render transparent objects with depth writes disabled (but depth test still enabled)
 	for (auto& p : transparent_pairs) {
 		BoundingBox mesh_box = transformBoundingBox(p.second.model, p.second.mesh->box);
 		if (camera->testBoxInFrustum(mesh_box.center, mesh_box.halfsize)) {
-			renderMeshWithMaterial(p.second.model, p.second.mesh, p.second.material);
+			renderMeshWithMaterial(p.second.model, p.second.mesh, p.second.material, &light_cam);
 		}
 	}
 }
 
 
-void Renderer::renderFBO(Matrix44 model, GFX::Mesh* mesh, SCN::Material* material, Camera* light_cam, Camera* real_camera) {
-	
-	glDisable(GL_DEPTH_TEST);
-	
+void Renderer::renderFBO(Matrix44 model, GFX::Mesh* mesh, SCN::Material* material, Camera* light_cam) {
 	GFX::Shader* shader = GFX::Shader::Get("plain");
+	if (!shader)
+		return;
 	shader->enable();
-	shader->setUniform("u_shadowmap", fbo->depth_texture, 2);
-	shader->setUniform("u_viewprojection_light", light_cam->viewprojection_matrix );
-	shader->setUniform("u_camera_pos", light_cam->eye);
 	shader->setUniform("u_model", model);
+	shader->setUniform("u_viewprojection", light_cam->viewprojection_matrix);
 	mesh->render(GL_TRIANGLES);
 	shader->disable();
-	glEnable(GL_DEPTH_TEST);
 }
 
 
@@ -284,7 +284,7 @@ void Renderer::renderSkybox(GFX::Texture* cubemap)
 
 
 // Renders a mesh given its transform and material
-void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN::Material* material)
+void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN::Material* material, Camera* light_cam)
 {
 	//in case there is nothing to do
 	if (!mesh || !mesh->getNumVertices() || !material )
@@ -330,6 +330,7 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 	std::vector<int> light_types;
 	std::vector<Vector3f> light_directions;
 	std::vector<Vector2f> cone_infos;
+	std::vector<mat4> lights_viewprojections;
 
 	for (auto& p : lights_list) {
 		light_colors.push_back(p->color);
@@ -346,7 +347,16 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 	shader->setUniform1Array("u_light_type", light_types.data(), lights_num);
 	shader->setUniform3Array("u_light_direction", (float*)light_directions.data(), lights_num);
 	shader->setUniform2Array("u_cone_infos", (float*)cone_infos.data(), lights_num);
+
+
 	
+	
+	//Upload shadow map
+
+	if (light_cam && fbo->depth_texture) {
+		shader->setUniform("u_shadowmap", fbo->depth_texture, 8);
+		shader->setUniform("u_light_viewprojection", light_cam->viewprojection_matrix);
+	}
 	// Render just the verticies as a wireframe
 	if (render_wireframe)
 		glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );

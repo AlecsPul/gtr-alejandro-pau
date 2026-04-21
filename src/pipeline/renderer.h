@@ -40,7 +40,7 @@ namespace SCN {
 
 		//add here your functions
 		//...
-		void renderFBO(const Matrix44 model, GFX::Mesh* mesh, SCN::Material* material, Camera* light_cam, Camera* real_camera);
+		void renderFBO(const Matrix44 model, GFX::Mesh* mesh, SCN::Material* material, Camera* light_cam);
 		void parseSceneEntities(SCN::Scene* scene, Camera* camera);
 
 		//renders several elements of the scene
@@ -50,7 +50,7 @@ namespace SCN {
 		void renderSkybox(GFX::Texture* cubemap);
 
 		//to render one mesh given its material and transformation matrix
-		void renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN::Material* material);
+		void renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN::Material* material, Camera* light_cam = nullptr);
 
 		void showUI();
 	};

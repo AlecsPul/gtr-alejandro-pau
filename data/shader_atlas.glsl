@@ -112,25 +112,11 @@ void main()
 
 #version 330 core
 
-in vec3 v_world_position;
 out vec4 FragColor;
-uniform sampler2D u_shadowmap;
-uniform mat4 u_viewprojection_light;
+
 void main()
 {
-	vec4 proj_pos = u_viewprojection_light * vec4(v_world_position, 1.0);
-	proj_pos /= proj_pos.w;
-
-	vec4 shadowmap_depth = texture(u_shadowmap, proj_pos.xy * 0.5 + 0.5); 
-	
-	float proj_depth = proj_pos.z; 
-	// Change projected depth to shadow map range from Clip[-1,1] to Texture[0,1]
-	proj_depth = proj_depth * 0.5 + 0.5;
-
-	if(proj_depth > shadowmap_depth.r) 
-		FragColor = vec4(1.0, 1.0, 1.0, 1.0); // In shadow
-	else
-		FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+	FragColor = vec4(1.0);
 }
 \texture.fs
 
@@ -160,6 +146,8 @@ uniform float u_alpha_cutoff;
 uniform int u_num_lights;
 uniform vec2 u_cone_infos[MAX_LIGHTS]; // x=alpha_min, y=alpha_max
 uniform sampler2D u_normal_map;
+uniform sampler2D u_shadowmap;
+uniform mat4 u_light_viewprojection;
 out vec4 FragColor;
 
 void main()
@@ -217,16 +205,24 @@ void main()
 			R = normalize(reflect(-L, N));
 			V = normalize(u_camera_position - v_world_position);
 			R_dot_V = clamp(dot(R,V), 0.0, 1.0);
-			out_color += u_light_color[i]* color.rgb * pow(R_dot_V, u_shininess) * light_intensity;
+					out_color += u_light_color[i]* color.rgb * pow(R_dot_V, u_shininess) * light_intensity;
 
-			FragColor = vec4(out_color, color.a);
-		}	
+						FragColor = vec4(out_color, color.a);
+					}	
 
-		}
-			
-		
-	
-}
+					}
+
+				// Apply shadow
+				vec4 proj_pos = u_light_viewprojection * vec4(v_world_position, 1.0);
+				proj_pos /= proj_pos.w;
+				proj_pos = (proj_pos + 1.0) * 0.5;
+				if (proj_pos.x >= 0.0 && proj_pos.x <= 1.0 && proj_pos.y >= 0.0 && proj_pos.y <= 1.0) {
+					float shadow_depth = texture(u_shadowmap, proj_pos.xy).r;
+					float bias = 0.005;
+					if (proj_pos.z - bias > shadow_depth)
+						FragColor.rgb *= 0.3;
+				}
+			}
 
 
 \skybox.fs
