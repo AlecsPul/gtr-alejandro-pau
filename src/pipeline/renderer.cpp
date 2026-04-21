@@ -170,6 +170,7 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 
 	// Ensure we have one FBO per light
 	Vector2 window_size = CORE::getWindowSize();
+
 	while ((int)shadow_fbos.size() < (int)lights_list.size()) {
 		GFX::FBO* new_fbo = new GFX::FBO();
 		new_fbo->setDepthOnly(window_size.x, window_size.y);
@@ -200,17 +201,19 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 		glClear(GL_DEPTH_BUFFER_BIT);
 		glEnable(GL_DEPTH_TEST);
 
-		if (forward_culling) {
+		if (forward_culling) { //Enable forward front culling(ImGui)
 			glEnable(GL_CULL_FACE);
 			glFrontFace(GL_CW);
 		}
 		
+		//Only shadow map on opaque
 		for (auto& p : opaque_pairs) {
 			renderFBO(p.second.model, p.second.mesh, p.second.material, &light_cam);
 		}
 
 		glColorMask(true, true, true, true);
 		shadow_fbos[i]->unbind();
+
 		if (forward_culling) {
 			glFrontFace(GL_CCW);
 			glDisable(GL_CULL_FACE);
@@ -235,7 +238,7 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 		}
 	}
 
-	// Render transparent objects with depth writes disabled (but depth test still enabled)
+	// Render transparent objects
 	for (auto& p : transparent_pairs) {
 		BoundingBox mesh_box = transformBoundingBox(p.second.model, p.second.mesh->box);
 		if (camera->testBoxInFrustum(mesh_box.center, mesh_box.halfsize)) {
@@ -245,7 +248,7 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 }
 
 
-void Renderer::renderFBO(Matrix44 model, GFX::Mesh* mesh, SCN::Material* material, Camera* light_cam) {
+void Renderer::renderFBO(Matrix44 model, GFX::Mesh* mesh, SCN::Material* material, Camera* light_cam) { //Create a simple shader to render the shadowmaps on the texture.
 	GFX::Shader* shader = GFX::Shader::Get("plain");
 	if (!shader)
 		return;
@@ -363,7 +366,7 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 	shader->setUniform1Array("u_light_type", light_types.data(), lights_num);
 	shader->setUniform3Array("u_light_direction", (float*)light_directions.data(), lights_num);
 	shader->setUniform2Array("u_cone_infos", (float*)cone_infos.data(), lights_num);
-	shader->setUniform("u_shadow_bias", shadow_bias);
+	shader->setUniform("u_shadow_bias", shadow_bias); //ImGui value
 	// Upload shadow maps and light view-projection matrices
 	{
 		int num_shadows = (int)shadow_fbos.size() < 8 ? (int)shadow_fbos.size() : 8;
