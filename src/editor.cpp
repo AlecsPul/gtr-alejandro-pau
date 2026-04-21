@@ -319,8 +319,10 @@ void SceneEditor::inspectEntity(SCN::BaseEntity* entity)
 		entity->name = buff;
 	ImGui::Text("Type: %s", entity->getTypeAsStr());
 	ImGui::Checkbox("Visible", &entity->visible);
-	UI::Layers("Layers", &entity->layers);
+	//for(int i=0; i<entity->)
+		//ImGui::SliderFloat("Shininess", &entity->root.material->shininess, 0.0f, 100.0f); //
 
+	UI::Layers("Layers", &entity->layers);
 	UI::inspectObject(entity->root.model);//Model edit
 #endif
 }
@@ -331,6 +333,14 @@ void SceneEditor::inspectEntity(SCN::PrefabEntity* entity)
 	this->inspectEntity((SCN::BaseEntity*)entity);
 
 	ImGui::Separator();
+	for (int i = 0; i < entity->prefab->root.children.size();++i) {
+		if (entity->prefab->root.children[i]->material) {
+			ImGui::SliderFloat("Shininess", &entity->prefab->root.children[i]->material->shininess, 0.0f, 100.0f);
+			
+		}
+			
+	}
+	 //
 
 	if (UI::Filename("filename", entity->filename, scene->base_folder))
 	{
@@ -559,6 +569,7 @@ void SceneEditor::inspectObject(SCN::Material* material)
 	ImGui::SliderFloat("Alpha Cutoff", &material->alpha_cutoff, 0.0f, 1.0f);
 	ImGui::ColorEdit4("Color", material->color.v); // Edit 4 floats representing a color + alpha
 	ImGui::ColorEdit3("Emissive", material->emissive_factor.v);
+
 	for (size_t i = 0; i < SCN::eTextureChannel::ALL; ++i)
 	{
 		if (material->textures[i].texture && ImGui::TreeNode( &material->textures[i], SCN::texture_channel_str[i] ))

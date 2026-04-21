@@ -57,7 +57,7 @@ namespace SCN {
 		eAlphaMode alpha_mode;	//could be NO_ALPHA, MASK (alpha cut) or BLEND (alpha blend)
 		float alpha_cutoff;		//pixels with alpha than this value shouldnt be rendered
 		bool two_sided;			//render both faces of the triangles
-		float shininess;
+		float shininess = 8.0f;
 								//material properties
 		Vector4f color;			//color and opacity
 		float roughness_factor;	//how smooth or rough is the surface

@@ -1,0 +1,30 @@
+Assignment 1:
+- 3.1
+- 3.2
+- 3.3
+- 3.4
+- 3.5(Extra): We added an if condition when rendering prefab entities to test if the box of the mesh was being seen by the frustum and render them only if they were being seen.
+
+Assignment 2:
+- 3.1
+- 3.2
+- 3.3
+- 3.3.1
+- 3.3.2
+- 3.4
+- 3.5 partially, we could implement the toggle for multipass/single pass although it doesn't really change anything. Also we did implement the shininess slider but it only shows for some prefabs(floor).
+
+Assignment 3:
+- 3.1
+- 3.2
+- 3.2.1
+- 3.2.2
+- 3.3
+- 3.4
+- 3.4.1
+- 3.4.2
+- 3.5
+- 3.5.3
+
+We are really proud of the multiple lights implementation, since it's the first time it really felt we had something going on on our screen. Mostly because we had problems approaching the shader and finally understanding what was going on was very satisfactory.
+We also felt proud of the shadowmaps implementation, again, because we saw the scene taking more shape and we were running low on time at the end, so completing it felt like a big achievement.

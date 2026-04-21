@@ -116,7 +116,9 @@ out vec4 FragColor;
 
 void main()
 {
-	FragColor = vec4(1.0);
+	// Note: maybe some alpha testing could be
+	// good here. ..
+	FragColor = vec4(0.0, 0.0, 0.0, 1.0);
 }
 \texture.fs
 
@@ -146,8 +148,10 @@ uniform float u_alpha_cutoff;
 uniform int u_num_lights;
 uniform vec2 u_cone_infos[MAX_LIGHTS]; // x=alpha_min, y=alpha_max
 uniform sampler2D u_normal_map;
-uniform sampler2D u_shadowmap;
-uniform mat4 u_light_viewprojection;
+uniform sampler2D u_shadowmap[MAX_LIGHTS];
+uniform mat4 u_light_viewprojection[MAX_LIGHTS];
+uniform int u_cast_shadows[MAX_LIGHTS];
+uniform float u_shadow_bias;
 out vec4 FragColor;
 
 void main()
@@ -199,30 +203,33 @@ void main()
 				L = normalize(u_light_position[i] - v_world_position);
 			}
 			N_dot_L = clamp(dot(L,N), 0.0, 1.0);
-			out_color += u_light_color[i] * color.rgb *N_dot_L * light_intensity;
+
+			// Apply shadow factor before adding light contribution
+			float shadow_factor = 1.0;
+			if(u_cast_shadows[i] == 1){
+				vec4 proj_pos = u_light_viewprojection[i] * vec4(v_world_position, 1.0);
+				proj_pos /= proj_pos.w;
+				proj_pos = (proj_pos + 1.0) * 0.5;
+				if (proj_pos.x >= 0.0 && proj_pos.x <= 1.0 && proj_pos.y >= 0.0 && proj_pos.y <= 1.0) {
+					float shadow_depth = texture(u_shadowmap[i], proj_pos.xy).r;
+					float bias = 0.005;
+					float real_depth = proj_pos.z - u_shadow_bias;
+					if (real_depth > shadow_depth)
+						shadow_factor = 0;
+				}
+			}
+
+			out_color += u_light_color[i] * color.rgb * N_dot_L * light_intensity * shadow_factor;
 
 			//Specular
 			R = normalize(reflect(-L, N));
 			V = normalize(u_camera_position - v_world_position);
 			R_dot_V = clamp(dot(R,V), 0.0, 1.0);
-					out_color += u_light_color[i]* color.rgb * pow(R_dot_V, u_shininess) * light_intensity;
-
-						FragColor = vec4(out_color, color.a);
-					}	
-
-					}
-
-				// Apply shadow
-				vec4 proj_pos = u_light_viewprojection * vec4(v_world_position, 1.0);
-				proj_pos /= proj_pos.w;
-				proj_pos = (proj_pos + 1.0) * 0.5;
-				if (proj_pos.x >= 0.0 && proj_pos.x <= 1.0 && proj_pos.y >= 0.0 && proj_pos.y <= 1.0) {
-					float shadow_depth = texture(u_shadowmap, proj_pos.xy).r;
-					float bias = 0.005;
-					if (proj_pos.z - bias > shadow_depth)
-						FragColor.rgb *= 0.3;
-				}
-			}
+			out_color += u_light_color[i] * color.rgb * pow(R_dot_V, u_shininess) * light_intensity * shadow_factor;
+		}
+	}
+	FragColor = vec4(out_color, color.a);
+}
 
 
 \skybox.fs

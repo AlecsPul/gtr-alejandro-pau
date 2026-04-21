@@ -22,17 +22,15 @@ using namespace SCN;
 
 //some globals
 GFX::Mesh sphere;
-GFX::FBO* fbo;
+std::vector<GFX::FBO*> shadow_fbos;
+float shadow_bias;
+bool forward_culling = false;
 Renderer::Renderer(const char* shader_atlas_filename)
 {
 	render_wireframe = false;
 	render_boundaries = false;
 	scene = nullptr;
 	skybox_cubemap = nullptr;
-
-	Vector2 window_size = CORE::getWindowSize(); //Get window size so the fbo is correct for current window
-	fbo = new GFX::FBO();
-	fbo->setDepthOnly(window_size.x, window_size.y);
 	if (!GFX::Shader::LoadAtlas(shader_atlas_filename))
 		exit(1);
 	GFX::checkGLErrors();
@@ -111,7 +109,7 @@ void Renderer::parseSceneEntities(SCN::Scene* scene, Camera* cam) {
 
 std::vector<sRenderable> opaque_list;
 std::vector<sRenderable> transparent_list;
-
+std::vector<Matrix44> light_cams_viewproj;
 void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 {
 	this->scene = scene;
@@ -170,34 +168,53 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 		return a.first > b.first; // larger distance first
 	});
 
+	// Ensure we have one FBO per light
+	Vector2 window_size = CORE::getWindowSize();
+	while ((int)shadow_fbos.size() < (int)lights_list.size()) {
+		GFX::FBO* new_fbo = new GFX::FBO();
+		new_fbo->setDepthOnly(window_size.x, window_size.y);
+		shadow_fbos.push_back(new_fbo);
+	}
 
-	Camera light_cam;
-	mat4 light_model = lights_list[3]->root.getGlobalMatrix();
-	vec3 light_pos = light_model.getTranslation();
+	light_cams_viewproj.clear();
+	for (int i = 0; i < (int)lights_list.size(); ++i) {
+		Camera light_cam;
+		mat4 light_model = lights_list[i]->root.getGlobalMatrix();
+		vec3 light_pos = light_model.getTranslation();
+		if (lights_list[i]->light_type == DIRECTIONAL) {
+			light_cam.lookAt(light_pos, light_model * vec3(0.0f, 0.0f, -1.0f), vec3(0.0f, 1.0f, 0.0f));
+			float half_size = lights_list[i]->area / 2.0f;
+			light_cam.setOrthographic(-half_size, half_size, -half_size, half_size, lights_list[i]->near_distance, lights_list[i]->max_distance);
+		} else {
+			float aspect = window_size.x / window_size.y;
+			light_cam.lookAt(light_pos, light_model * vec3(0.0f, 0.0f, -1.0f), vec3(0.0f, 1.0f, 0.0f));
+			light_cam.setPerspective(lights_list[i]->cone_info.x, aspect, lights_list[i]->near_distance, lights_list[i]->max_distance);
+		}
+		light_cams_viewproj.push_back(light_cam.viewprojection_matrix);
 
-	light_cam.lookAt(light_pos, light_model * vec3(0.0f, 0.0f, -1.0f), vec3(0.0f, 1.0f, 0.0f));
-	float half_size = lights_list[3]->area / 2.0f;
-	light_cam.setOrthographic(-half_size, half_size, -half_size, half_size, lights_list[3]->near_distance, lights_list[3]->max_distance);
+		if (!lights_list[i]->cast_shadows)
+			continue;
 
-	if (lights_list.size() > 0) {
-		fbo->bind();
-
-		// Disable color writes, only write to depth buffer
+		shadow_fbos[i]->bind();
 		glColorMask(false, false, false, false);
 		glClear(GL_DEPTH_BUFFER_BIT);
 		glEnable(GL_DEPTH_TEST);
-		glEnable(GL_CULL_FACE);
-		glFrontFace(GL_CW); // treat CW as front so CCW (actual fronts) get culled = reduces shadow acne
 
-		// Render opaque objects from light's perspective
+		if (forward_culling) {
+			glEnable(GL_CULL_FACE);
+			glFrontFace(GL_CW);
+		}
+		
 		for (auto& p : opaque_pairs) {
 			renderFBO(p.second.model, p.second.mesh, p.second.material, &light_cam);
 		}
-		// Re-enable color writes and unbind FBO
+
 		glColorMask(true, true, true, true);
-		fbo->unbind();
-		glFrontFace(GL_CCW);
-		glDisable(GL_CULL_FACE);
+		shadow_fbos[i]->unbind();
+		if (forward_culling) {
+			glFrontFace(GL_CCW);
+			glDisable(GL_CULL_FACE);
+		}
 		
 	}
 	
@@ -214,7 +231,7 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 	for (auto& p : opaque_pairs) {
 		BoundingBox mesh_box = transformBoundingBox(p.second.model, p.second.mesh->box);
 		if (camera->testBoxInFrustum(mesh_box.center, mesh_box.halfsize)) {
-			renderMeshWithMaterial(p.second.model, p.second.mesh, p.second.material, &light_cam);
+			renderMeshWithMaterial(p.second.model, p.second.mesh, p.second.material, shadow_fbos);
 		}
 	}
 
@@ -222,7 +239,7 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 	for (auto& p : transparent_pairs) {
 		BoundingBox mesh_box = transformBoundingBox(p.second.model, p.second.mesh->box);
 		if (camera->testBoxInFrustum(mesh_box.center, mesh_box.halfsize)) {
-			renderMeshWithMaterial(p.second.model, p.second.mesh, p.second.material, &light_cam);
+			renderMeshWithMaterial(p.second.model, p.second.mesh, p.second.material, shadow_fbos);
 		}
 	}
 }
@@ -284,7 +301,7 @@ void Renderer::renderSkybox(GFX::Texture* cubemap)
 
 
 // Renders a mesh given its transform and material
-void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN::Material* material, Camera* light_cam)
+void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN::Material* material, const std::vector<GFX::FBO*>& shadow_fbos)
 {
 	//in case there is nothing to do
 	if (!mesh || !mesh->getNumVertices() || !material )
@@ -325,38 +342,52 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 
 	// Clear light vectors before filling
 	std::vector<Vector3f> light_colors;
-	std::vector<Vector3f> light_intensities;
+	std::vector<float> light_intensities;
 	std::vector<Vector3f> light_positions;
 	std::vector<int> light_types;
 	std::vector<Vector3f> light_directions;
 	std::vector<Vector2f> cone_infos;
-	std::vector<mat4> lights_viewprojections;
-
+	
 	for (auto& p : lights_list) {
 		light_colors.push_back(p->color);
 		light_positions.push_back(p->root.model.getTranslation());
 		light_intensities.push_back(p->intensity);
 		light_types.push_back(p->light_type);
 		light_directions.push_back(p->root.model.frontVector());
-		cone_infos.push_back({ (float)(p->cone_info.x * DEG2RAD),(float)(p->cone_info.y * DEG2RAD) });
+		cone_infos.push_back(vec2(p->cone_info.x * DEG2RAD, p->cone_info.y * DEG2RAD));
 	}
 	
 	shader->setUniform3Array("u_light_color", (float*)light_colors.data(), lights_num);
-	shader->setUniform1Array("u_intensity", (float*)light_intensities.data(), lights_num);
+	shader->setUniform1Array("u_intensity", light_intensities.data(), lights_num);
 	shader->setUniform3Array("u_light_position", (float*)light_positions.data(), lights_num);
 	shader->setUniform1Array("u_light_type", light_types.data(), lights_num);
 	shader->setUniform3Array("u_light_direction", (float*)light_directions.data(), lights_num);
 	shader->setUniform2Array("u_cone_infos", (float*)cone_infos.data(), lights_num);
+	shader->setUniform("u_shadow_bias", shadow_bias);
+	// Upload shadow maps and light view-projection matrices
+	{
+		int num_shadows = (int)shadow_fbos.size() < 8 ? (int)shadow_fbos.size() : 8;
+		// Bind each shadow map depth texture to a texture unit (starting at slot 8)
+		int shadow_slots[8] = {8, 9, 10, 11, 12, 13, 14, 15};
+		for (int i = 0; i < num_shadows; ++i) {
+			if (shadow_fbos[i] && shadow_fbos[i]->depth_texture) {
+				glActiveTexture(GL_TEXTURE0 + shadow_slots[i]);
+				shadow_fbos[i]->depth_texture->bind();
+			}
+		}
+		shader->setUniform1Array("u_shadowmap", shadow_slots, lights_num < num_shadows ? lights_num : num_shadows);
 
+		// Upload light view-projection matrices
+		shader->setMatrix44Array("u_light_viewprojection", light_cams_viewproj.data(), lights_num);
 
-	
-	
-	//Upload shadow map
-
-	if (light_cam && fbo->depth_texture) {
-		shader->setUniform("u_shadowmap", fbo->depth_texture, 8);
-		shader->setUniform("u_light_viewprojection", light_cam->viewprojection_matrix);
+		// Upload shadow casting flags
+		std::vector<int> cast_shadows;
+		for (auto& light : lights_list) {
+			cast_shadows.push_back(light->cast_shadows ? 1 : 0);
+		}
+		shader->setUniform1Array("u_cast_shadows", cast_shadows.data(), lights_num);
 	}
+
 	// Render just the verticies as a wireframe
 	if (render_wireframe)
 		glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
@@ -382,9 +413,10 @@ void Renderer::showUI()
 	
 	//add here your stuff
 	//...
-
+	//EDITOR.cpp LINE 323 -> SliderFloat for shininess
 	ImGui::Checkbox("Multi pass", &multi_pass);
-	
+	ImGui::SliderFloat("Shadow_bias", &shadow_bias,0.00001f, 0.1f);
+	ImGui::Checkbox("Forward Face Culling", &forward_culling);
 }
 
 #else
