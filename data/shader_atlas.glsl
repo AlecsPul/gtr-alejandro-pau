@@ -188,7 +188,7 @@ void main()
 			D = normalize(u_light_direction[i]);
 			if(u_light_type[i] == 3) {
 				L = D;
-				light_intensity = 1.0;
+				light_intensity = u_intensity[i];
 			} 
 			else if(u_light_type[i] == 2){
 				L = normalize(u_light_position[i] - v_world_position);

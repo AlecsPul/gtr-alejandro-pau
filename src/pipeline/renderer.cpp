@@ -170,7 +170,7 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 
 	// Ensure we have one FBO per light
 	Vector2 window_size = CORE::getWindowSize();
-
+	
 	while ((int)shadow_fbos.size() < (int)lights_list.size()) {
 		GFX::FBO* new_fbo = new GFX::FBO();
 		new_fbo->setDepthOnly(window_size.x, window_size.y);
@@ -359,7 +359,6 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 		light_directions.push_back(p->root.model.frontVector());
 		cone_infos.push_back(vec2(p->cone_info.x * DEG2RAD, p->cone_info.y * DEG2RAD));
 	}
-	
 	shader->setUniform3Array("u_light_color", (float*)light_colors.data(), lights_num);
 	shader->setUniform1Array("u_intensity", light_intensities.data(), lights_num);
 	shader->setUniform3Array("u_light_position", (float*)light_positions.data(), lights_num);
