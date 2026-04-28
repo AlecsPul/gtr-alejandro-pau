@@ -87,12 +87,14 @@ void main()
 in vec3 a_vertex;
 in vec2 a_coord;
 out vec2 v_uv;
-
+out vec4 v_color;
+in vec4 a_color;
 
 
 
 void main()
 {	
+	v_color = a_color;
 	gl_Position = vec4( a_vertex, 1.0 );
 	v_uv = a_coord;
 }
@@ -252,21 +254,8 @@ void main()
 #version 330 core
 const int MAX_LIGHTS = 8;
 in vec2 v_uv;
+in vec4 v_color;
 
-uniform vec3 u_light_position[MAX_LIGHTS];
-uniform vec3 u_Ia;
-uniform float u_shininess;
-uniform vec3 u_camera_position;
-uniform float u_intensity[MAX_LIGHTS];
-uniform vec3 u_light_color[MAX_LIGHTS];
-uniform int u_light_type[MAX_LIGHTS];
-uniform vec3 u_light_direction[MAX_LIGHTS];
-uniform int u_num_lights;
-uniform vec2 u_cone_infos[MAX_LIGHTS];
-uniform sampler2D u_shadowmap[MAX_LIGHTS];
-uniform mat4 u_light_viewprojection[MAX_LIGHTS];
-uniform int u_cast_shadows[MAX_LIGHTS];
-uniform float u_shadow_bias;
 uniform mat4 u_inv_vp_mat;
 
 uniform sampler2D u_gbuffer_depth;
@@ -287,64 +276,9 @@ void main()
     vec3 world_pos = not_norm_world_pos.xyz / not_norm_world_pos.w;
 
     vec4 color = texture(u_gbuffer_color, uv);
-    vec3 N = normalize(texture(u_gbuffer_normal, uv).xyz * 2.0 - 1.0);
-
-    vec3 out_color = u_Ia * color.rgb;
-
-    vec3 L;
-    float N_dot_L;
-    vec3 R;
-    float light_intensity;
-    vec3 V;
-    float R_dot_V;
-    vec3 D;
-
-    for(int i = 0; i < MAX_LIGHTS; i++){
-        if(i < u_num_lights){
-            light_intensity = u_intensity[i] / (pow(distance(u_light_position[i], world_pos), 2.0));
-
-            D = normalize(u_light_direction[i]);
-            if(u_light_type[i] == 3) {
-                L = D;
-                light_intensity = u_intensity[i];
-            }
-            else if(u_light_type[i] == 2){
-                L = normalize(u_light_position[i] - world_pos);
-                if(clamp(dot(L, D), 0.0, 1.0) >= clamp(cos(u_cone_infos[i].y), 0.0, 1.0)){
-                    light_intensity *= (clamp(dot(L, D), 0.0, 1.0) - clamp(cos(u_cone_infos[i].y), 0.0, 1.0)) / (clamp(cos(u_cone_infos[i].x), 0.0, 1.0) - clamp(cos(u_cone_infos[i].y), 0.0, 1.0));
-                }
-                else{
-                    light_intensity = 0.0;
-                }
-            }
-            else {
-                L = normalize(u_light_position[i] - world_pos);
-            }
-            N_dot_L = clamp(dot(L, N), 0.0, 1.0);
-
-            float shadow_factor = 1.0;
-            if(u_cast_shadows[i] == 1){
-                vec4 proj_pos = u_light_viewprojection[i] * vec4(world_pos, 1.0);
-                proj_pos /= proj_pos.w;
-                proj_pos = (proj_pos + 1.0) * 0.5;
-                if (proj_pos.x >= 0.0 && proj_pos.x <= 1.0 && proj_pos.y >= 0.0 && proj_pos.y <= 1.0) {
-                    float shadow_depth = texture(u_shadowmap[i], proj_pos.xy).r;
-                    float real_depth = proj_pos.z - u_shadow_bias;
-                    if (real_depth > shadow_depth)
-                        shadow_factor = 0.0;
-                }
-            }
-
-            out_color += u_light_color[i] * color.rgb * N_dot_L * light_intensity * shadow_factor;
-
-            R = normalize(reflect(-L, N));
-            V = normalize(u_camera_position - world_pos);
-            R_dot_V = clamp(dot(R, V), 0.0, 1.0);
-            out_color += u_light_color[i] * color.rgb * pow(R_dot_V, u_shininess) * light_intensity * shadow_factor;
-        }
-    }
-
-    FragColor = vec4(out_color, color.a);
+   
+    
+    FragColor = vec4(color.rgb, color.a);
 }
 
 \skybox.fs

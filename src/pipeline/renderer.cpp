@@ -277,9 +277,6 @@ void Renderer::renderDeferredLightingPass(const std::vector<GFX::FBO*>& shadow_f
 	if (!shader)
 		return;
 	shader->enable();
-
-	sendLightUniforms(shader);
-
 	int texture_slots = 0;
 	shader->setTexture("u_gbuffer_color", gbuffer_fbo->color_textures[0], texture_slots++);
 	shader->setTexture("u_gbuffer_normal", gbuffer_fbo->color_textures[1], texture_slots++);
