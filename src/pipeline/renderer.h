@@ -35,6 +35,7 @@ namespace SCN {
 		//updated every frame
 		Renderer(const char* shaders_atlas_filename );
 		void sendLightUniforms(GFX::Shader *shader);
+		void renderDeferredLightingPass(const std::vector<GFX::FBO*>& shadow_fbos);
 		//just to be sure we have everything ready for the rendering
 		void setupScene();
 

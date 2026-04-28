@@ -257,7 +257,8 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 		}
 	}
 	gbuffer_fbo->unbind();
-
+	
+	renderDeferredLightingPass(shadow_fbos);
 	// Render transparent objects
 	for (auto& p : transparent_pairs) {
 		BoundingBox mesh_box = transformBoundingBox(p.second.model, p.second.mesh->box);
@@ -267,7 +268,64 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 	}
 }
 
+void Renderer::renderDeferredLightingPass(const std::vector<GFX::FBO*>& shadow_fbos)
+{
+	Camera* camera = Camera::current;
+	Vector2 window_size = CORE::getWindowSize();
 
+	GFX::Shader* shader = GFX::Shader::Get("deferred");
+	if (!shader)
+		return;
+	shader->enable();
+
+	sendLightUniforms(shader);
+
+	int texture_slots = 0;
+	shader->setTexture("u_gbuffer_color", gbuffer_fbo->color_textures[0], texture_slots++);
+	shader->setTexture("u_gbuffer_normal", gbuffer_fbo->color_textures[1], texture_slots++);
+	shader->setTexture("u_gbuffer_depth", gbuffer_fbo->depth_texture, texture_slots++);
+	shader->setUniform("u_res_inv", vec2(1.0f / window_size.x, 1.0f / window_size.y));
+	shader->setUniform("u_inv_vp_mat", camera->inverse_viewprojection_matrix);
+	shader->setUniform("u_camera_position", camera->eye);
+	shader->setUniform("u_shadow_bias", shadow_bias);
+	shader->setUniform("u_shininess", 40.0f); // or expose as a global like shadow_bias
+
+	int lights_num = (int)lights_list.size();
+	int num_shadows = (int)shadow_fbos.size() < 8 ? (int)shadow_fbos.size() : 8;
+	int shadow_slots[8] = { 8, 9, 10, 11, 12, 13, 14, 15 };
+	for (int i = 0; i < num_shadows; ++i) {
+		if (shadow_fbos[i] && shadow_fbos[i]->depth_texture) {
+			glActiveTexture(GL_TEXTURE0 + shadow_slots[i]);
+			shadow_fbos[i]->depth_texture->bind();
+		}
+	}
+	shader->setUniform1Array("u_shadowmap", shadow_slots, lights_num < num_shadows ? lights_num : num_shadows);
+	shader->setMatrix44Array("u_light_viewprojection", light_cams_viewproj.data(), lights_num);
+
+	std::vector<int> cast_shadows;
+	for (auto& light : lights_list)
+		cast_shadows.push_back(light->cast_shadows ? 1 : 0);
+	shader->setUniform1Array("u_cast_shadows", cast_shadows.data(), lights_num);
+
+	glDisable(GL_DEPTH_TEST);
+	glDisable(GL_BLEND);
+
+
+	GFX::Mesh* quad = GFX::Mesh::getQuad();
+	quad->render(GL_TRIANGLES);
+
+	glEnable(GL_DEPTH_TEST);
+
+	for (int i = 0; i < num_shadows; ++i) {
+		if (shadow_fbos[i] && shadow_fbos[i]->depth_texture) {
+			glActiveTexture(GL_TEXTURE0 + 8 + i);
+			shadow_fbos[i]->depth_texture->unbind();
+		}
+	}
+	glActiveTexture(GL_TEXTURE0);
+
+	shader->disable();
+}
 void Renderer::renderFBO(Matrix44 model, GFX::Mesh* mesh, SCN::Material* material, Camera* light_cam) { //Create a simple shader to render the shadowmaps on the texture.
 	GFX::Shader* shader = GFX::Shader::Get("plain");
 	if (!shader)
@@ -362,19 +420,7 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 
 	sendLightUniforms(shader);
 
-	Vector2 window_size = CORE::getWindowSize();
-	GFX::Mesh* quad = GFX::Mesh::getQuad();
-	int texture_slots = 2;
 	
-	sendLightUniforms(shader);
-
-	shader->setTexture("u_gbuffer_color", gbuffer_fbo->color_textures[0], texture_slots++);
-	shader->setTexture("u_gbuffer_normal", gbuffer_fbo->color_textures[1], texture_slots++);
-	shader->setTexture("u_gbuffer_depth", gbuffer_fbo->depth_texture, texture_slots++);
-	shader->setUniform("u_res_inv", vec2(1.0f / window_size.x, 1.0f / window_size.y));
-	shader->setUniform("u_inv_vp_mat", camera->inverse_viewprojection_matrix);
-
-	quad->render(GL_TRIANGLES);
 	
 	int lights_num = (int)lights_list.size();
 	shader->setUniform("u_shadow_bias", shadow_bias); //ImGui value
