@@ -25,12 +25,12 @@ namespace SCN {
 	public:
 		bool render_wireframe;
 		bool render_boundaries;
-
 		bool multi_pass;
 
 		GFX::Texture* skybox_cubemap;
-
 		SCN::Scene* scene;
+
+		GFX::FBO* gbuffer_fbo = nullptr; // persistent GBuffer FBO, reused every frame
 
 		//updated every frame
 		Renderer(const char* shaders_atlas_filename );

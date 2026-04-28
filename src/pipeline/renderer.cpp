@@ -170,12 +170,22 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 
 	// Ensure we have one FBO per light
 	Vector2 window_size = CORE::getWindowSize();
-	
-	while ((int)shadow_fbos.size() < (int)lights_list.size()) {
-		GFX::FBO* new_fbo = new GFX::FBO();
-		new_fbo->setDepthOnly(window_size.x, window_size.y);
-		shadow_fbos.push_back(new_fbo);
-	}
+    int num_lights = (int)lights_list.size();
+
+    // Delete FBOs that are no longer needed
+    while ((int)shadow_fbos.size() > num_lights)
+    {
+        delete shadow_fbos.back();
+        shadow_fbos.pop_back();
+    }
+
+    // Create FBOs for new lights
+    while ((int)shadow_fbos.size() < num_lights)
+    {
+        GFX::FBO* new_fbo = new GFX::FBO();
+        new_fbo->setDepthOnly(window_size.x, window_size.y);
+        shadow_fbos.push_back(new_fbo);
+    }
 
 	light_cams_viewproj.clear();
 	for (int i = 0; i < (int)lights_list.size(); ++i) {
@@ -230,13 +240,23 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 	if (skybox_cubemap)
 		renderSkybox(skybox_cubemap);
 
-	// Render opaque objects
+	// Render opaque objects — reuse geometry_fbo, only recreate if size changed
+	if (!gbuffer_fbo|| gbuffer_fbo->width  != (int)window_size.x|| gbuffer_fbo->height != (int)window_size.y)
+	{
+		delete gbuffer_fbo;
+		gbuffer_fbo = new GFX::FBO();
+		gbuffer_fbo->create(window_size.x, window_size.y, 2, GL_RGBA, GL_UNSIGNED_BYTE, true);
+	}
+
+	gbuffer_fbo->bind();
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	for (auto& p : opaque_pairs) {
 		BoundingBox mesh_box = transformBoundingBox(p.second.model, p.second.mesh->box);
 		if (camera->testBoxInFrustum(mesh_box.center, mesh_box.halfsize)) {
 			renderMeshWithMaterial(p.second.model, p.second.mesh, p.second.material, shadow_fbos);
 		}
 	}
+	gbuffer_fbo->unbind();
 
 	// Render transparent objects
 	for (auto& p : transparent_pairs) {
@@ -396,6 +416,18 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 
 	//do the draw call that renders the mesh into the screen
 	mesh->render(GL_TRIANGLES);
+
+	// Unbind shadow map textures to avoid state leakage into subsequent renders
+	{
+		int num_shadows = (int)shadow_fbos.size() < 8 ? (int)shadow_fbos.size() : 8;
+		for (int i = 0; i < num_shadows; ++i) {
+			if (shadow_fbos[i] && shadow_fbos[i]->depth_texture) {
+				glActiveTexture(GL_TEXTURE0 + 8 + i);
+				shadow_fbos[i]->depth_texture->unbind();
+			}
+		}
+		glActiveTexture(GL_TEXTURE0); // restore default active unit
+	}
 
 	//disable shader
 	shader->disable();

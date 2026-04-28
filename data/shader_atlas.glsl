@@ -152,8 +152,9 @@ uniform sampler2D u_shadowmap[MAX_LIGHTS];
 uniform mat4 u_light_viewprojection[MAX_LIGHTS];
 uniform int u_cast_shadows[MAX_LIGHTS];
 uniform float u_shadow_bias;
-out vec4 FragColor;
-
+//out vec4 FragColor;
+layout(location = 0) out vec4 gbuffer_albedo;
+layout(location = 1) out vec4 gbuffer_normal_mat;
 void main()
 {
 	vec2 uv = v_uv;
@@ -228,7 +229,9 @@ void main()
 			out_color += u_light_color[i] * color.rgb * pow(R_dot_V, u_shininess) * light_intensity * shadow_factor;
 		}
 	}
-	FragColor = vec4(out_color, color.a);
+	//FragColor = vec4(out_color, color.a);
+	gbuffer_albedo = vec4(color.rgb, 1.0);
+	gbuffer_normal_mat = vec4(N.x * 0.5 + 0.5, N.y * 0.5 + 0.5, N.z * 0.5 + 0.5, 1.0);
 }
 
 
@@ -242,12 +245,17 @@ in vec3 v_world_position;
 uniform samplerCube u_texture;
 uniform vec3 u_camera_position;
 out vec4 FragColor;
+layout(location = 0) out vec4 gbuffer_albedo;
+layout(location = 1) out vec4 gbuffer_normal_mat;
 
 void main()
 {
 	vec3 E = v_world_position - u_camera_position;
 	vec4 color = texture( u_texture, E );
+	vec3 N = normalize(v_position);
 	FragColor = color;
+	gbuffer_albedo = vec4(color.rgb, 1.0);
+	gbuffer_normal_mat = vec4(N.x * 0.5 + 0.5, N.y * 0.5 + 0.5, N.z * 0.5 + 0.5, 1.0);
 }
 
 
