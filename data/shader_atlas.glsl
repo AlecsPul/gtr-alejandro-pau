@@ -1,6 +1,6 @@
 //example of some shaders compiled
 flat basic.vs flat.fs
-texture basic.vs texture.fs
+texture quad.vs texture.fs
 skybox basic.vs skybox.fs
 depth quad.vs depth.fs
 multi basic.vs multi.fs
@@ -88,9 +88,24 @@ in vec3 a_vertex;
 in vec2 a_coord;
 out vec2 v_uv;
 
+
+uniform sampler2D u_gbuffer_depth; //depth map
+uniform sampler2D u_gbuffer_normal; //normal map
+uniform sampler2D u_gbuffer_color; //color map
+uniform vec2 u_res_inv;
+uniform mat4 u_inv_vp_mat;
+
 void main()
 {	
-	v_uv = a_coord;
+	float depth = texture(u_gbuffer_depth, v_uv).r;
+	float depth_clip = depth * 2.0 - 1.0; // back to clip space
+	vec2 uv_clip = v_uv * 2.0 - 1.0;
+	vec4 clip_coords = vec4(uv_clip.x, uv_clip.y, depth_clip, 1.0); 
+
+	vec4 not_norm_world_pos = u_inv_vp_mat * clip_coords;
+	vec3 world_pos = not_norm_world_pos.xyz / not_norm_world_pos.w;
+
+	v_uv = gl_FragCoord.xy * u_res_inv;
 	gl_Position = vec4( a_vertex, 1.0 );
 }
 
@@ -152,9 +167,13 @@ uniform sampler2D u_shadowmap[MAX_LIGHTS];
 uniform mat4 u_light_viewprojection[MAX_LIGHTS];
 uniform int u_cast_shadows[MAX_LIGHTS];
 uniform float u_shadow_bias;
+uniform mat4 u_inv_vp_mat;
 //out vec4 FragColor;
 layout(location = 0) out vec4 gbuffer_albedo;
 layout(location = 1) out vec4 gbuffer_normal_mat;
+
+
+
 void main()
 {
 	vec2 uv = v_uv;
@@ -232,6 +251,8 @@ void main()
 	//FragColor = vec4(out_color, color.a);
 	gbuffer_albedo = vec4(color.rgb, 1.0);
 	gbuffer_normal_mat = vec4(N.x * 0.5 + 0.5, N.y * 0.5 + 0.5, N.z * 0.5 + 0.5, 1.0);
+	
+
 }
 
 
@@ -295,17 +316,22 @@ void main()
 \depth.fs
 
 #version 330 core
-
+const int MAX_LIGHTS = 8;
 uniform vec2 u_camera_nearfar;
 uniform sampler2D u_texture; //depth map
 in vec2 v_uv;
 out vec4 FragColor;
+
+
+
 
 void main()
 {
 	float n = u_camera_nearfar.x;
 	float f = u_camera_nearfar.y;
 	float z = texture(u_texture,v_uv).x;
+
+	
 	if( n == 0.0 && f == 1.0 )
 		FragColor = vec4(z);
 	else

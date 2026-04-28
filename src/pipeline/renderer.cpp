@@ -358,39 +358,31 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 	// Upload time, for cool shader effects
 	float t = getTime();
 	shader->setUniform("u_time", t );
-	int lights_num = (int)lights_list.size();
 
-	shader->setUniform("u_Ia", scene->ambient_light);
-	shader->setUniform("u_num_lights", lights_num);
 
-	// Clear light vectors before filling
-	std::vector<Vector3f> light_colors;
-	std::vector<float> light_intensities;
-	std::vector<Vector3f> light_positions;
-	std::vector<int> light_types;
-	std::vector<Vector3f> light_directions;
-	std::vector<Vector2f> cone_infos;
+	sendLightUniforms(shader);
+
+	Vector2 window_size = CORE::getWindowSize();
+	GFX::Mesh* quad = GFX::Mesh::getQuad();
+	int texture_slots = 2;
 	
-	for (auto& p : lights_list) {
-		light_colors.push_back(p->color);
-		light_positions.push_back(p->root.model.getTranslation());
-		light_intensities.push_back(p->intensity);
-		light_types.push_back(p->light_type);
-		light_directions.push_back(p->root.model.frontVector());
-		cone_infos.push_back(vec2(p->cone_info.x * DEG2RAD, p->cone_info.y * DEG2RAD));
-	}
-	shader->setUniform3Array("u_light_color", (float*)light_colors.data(), lights_num);
-	shader->setUniform1Array("u_intensity", light_intensities.data(), lights_num);
-	shader->setUniform3Array("u_light_position", (float*)light_positions.data(), lights_num);
-	shader->setUniform1Array("u_light_type", light_types.data(), lights_num);
-	shader->setUniform3Array("u_light_direction", (float*)light_directions.data(), lights_num);
-	shader->setUniform2Array("u_cone_infos", (float*)cone_infos.data(), lights_num);
+	sendLightUniforms(shader);
+
+	shader->setTexture("u_gbuffer_color", gbuffer_fbo->color_textures[0], texture_slots++);
+	shader->setTexture("u_gbuffer_normal", gbuffer_fbo->color_textures[1], texture_slots++);
+	shader->setTexture("u_gbuffer_depth", gbuffer_fbo->depth_texture, texture_slots++);
+	shader->setUniform("u_res_inv", vec2(1.0f / window_size.x, 1.0f / window_size.y));
+	shader->setUniform("u_inv_vp_mat", camera->inverse_viewprojection_matrix);
+
+	quad->render(GL_TRIANGLES);
+	
+	int lights_num = (int)lights_list.size();
 	shader->setUniform("u_shadow_bias", shadow_bias); //ImGui value
 	// Upload shadow maps and light view-projection matrices
 	{
 		int num_shadows = (int)shadow_fbos.size() < 8 ? (int)shadow_fbos.size() : 8;
 		// Bind each shadow map depth texture to a texture unit (starting at slot 8)
-		int shadow_slots[8] = {8, 9, 10, 11, 12, 13, 14, 15};
+		int shadow_slots[8] = { 8, 9, 10, 11, 12, 13, 14, 15 };
 		for (int i = 0; i < num_shadows; ++i) {
 			if (shadow_fbos[i] && shadow_fbos[i]->depth_texture) {
 				glActiveTexture(GL_TEXTURE0 + shadow_slots[i]);
@@ -409,7 +401,6 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 		}
 		shader->setUniform1Array("u_cast_shadows", cast_shadows.data(), lights_num);
 	}
-
 	// Render just the verticies as a wireframe
 	if (render_wireframe)
 		glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
@@ -437,6 +428,38 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 	glPolygonMode( GL_FRONT_AND_BACK, GL_FILL );
 }
 
+void Renderer::sendLightUniforms(GFX::Shader *shader) {
+	int lights_num = (int)lights_list.size();
+
+	shader->setUniform("u_Ia", scene->ambient_light);
+	shader->setUniform("u_num_lights", lights_num);
+
+	// Clear light vectors before filling
+	std::vector<Vector3f> light_colors;
+	std::vector<float> light_intensities;
+	std::vector<Vector3f> light_positions;
+	std::vector<int> light_types;
+	std::vector<Vector3f> light_directions;
+	std::vector<Vector2f> cone_infos;
+
+	for (auto& p : lights_list) {
+		light_colors.push_back(p->color);
+		light_positions.push_back(p->root.model.getTranslation());
+		light_intensities.push_back(p->intensity);
+		light_types.push_back(p->light_type);
+		light_directions.push_back(p->root.model.frontVector());
+		cone_infos.push_back(vec2(p->cone_info.x * DEG2RAD, p->cone_info.y * DEG2RAD));
+	}
+	shader->setUniform3Array("u_light_color", (float*)light_colors.data(), lights_num);
+	shader->setUniform1Array("u_intensity", light_intensities.data(), lights_num);
+	shader->setUniform3Array("u_light_position", (float*)light_positions.data(), lights_num);
+	shader->setUniform1Array("u_light_type", light_types.data(), lights_num);
+	shader->setUniform3Array("u_light_direction", (float*)light_directions.data(), lights_num);
+	shader->setUniform2Array("u_cone_infos", (float*)cone_infos.data(), lights_num);
+
+
+	
+}
 #ifndef SKIP_IMGUI
 
 void Renderer::showUI()
