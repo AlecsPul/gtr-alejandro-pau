@@ -6,6 +6,9 @@ depth quad.vs depth.fs
 multi basic.vs multi.fs
 plain basic.vs plain.fs
 deferred quad.vs deferred.fs
+material basic.vs material.fs
+
+
 \perturbNormal
 
 // From https://github.com/glslify/glsl-perturb-normal/blob/master/cotangent-frame.glsl
@@ -86,8 +89,10 @@ void main()
 
 in vec3 a_vertex;
 in vec2 a_coord;
+in vec3 a_normal;
 out vec2 v_uv;
 out vec4 v_color;
+out vec3 v_normal;
 in vec4 a_color;
 
 
@@ -97,6 +102,7 @@ void main()
 	v_color = a_color;
 	gl_Position = vec4( a_vertex, 1.0 );
 	v_uv = a_coord;
+	v_normal = a_normal;
 }
 
 
@@ -126,6 +132,29 @@ void main()
 	FragColor = vec4(0.0, 0.0, 0.0, 1.0);
 }
 
+\material.fs
+
+#version 330 core
+
+in vec2 v_uv;
+
+uniform vec4 u_color;
+uniform sampler2D u_texture;
+uniform float u_alpha_cutoff;
+
+out vec4 FragColor;
+
+void main()
+{
+	vec2 uv = v_uv;
+	vec4 color = u_color;
+	color *= texture( u_texture, uv );
+	if(color.a < u_alpha_cutoff)
+		discard;
+
+	FragColor = vec4(color.rgb, 1.0);
+}
+
 
 \texture.fs
 
@@ -143,7 +172,7 @@ uniform vec3 u_Ia;
 
 
 uniform float u_shininess;
-uniform vec3 u_camera_position;
+uniform vec3 u_camera_pos;
 uniform float u_intensity[MAX_LIGHTS];
 uniform vec3 u_light_color[MAX_LIGHTS];
 uniform int u_light_type[MAX_LIGHTS];
@@ -160,22 +189,25 @@ uniform mat4 u_light_viewprojection[MAX_LIGHTS];
 uniform int u_cast_shadows[MAX_LIGHTS];
 uniform float u_shadow_bias;
 
-//out vec4 FragColor;
-layout(location = 0) out vec4 gbuffer_albedo;
-layout(location = 1) out vec4 gbuffer_normal_mat;
-
-
-
+uniform sampler2D u_gbuffer_depth;
+uniform sampler2D u_gbuffer_normal;
+uniform sampler2D u_gbuffer_color;
+uniform mat4 u_inv_vp_mat;
+out vec4 FragColor;
 
 void main()
 {
 	vec2 uv = v_uv;
-	
-	vec4 color = u_color;
-	color *= texture( u_texture, v_uv );
-	if(color.a < u_alpha_cutoff)
-		discard;
 
+    float depth = texture(u_gbuffer_depth, uv).r;
+    float depth_clip = depth * 2.0 - 1.0;
+    vec2 uv_clip = uv * 2.0 - 1.0;
+    vec4 clip_coords = vec4(uv_clip.x, uv_clip.y, depth_clip, 1.0);
+    vec4 not_norm_world_pos = u_inv_vp_mat * clip_coords;
+    vec3 world_pos = not_norm_world_pos.xyz / not_norm_world_pos.w;
+
+    vec4 color = texture(u_gbuffer_color, uv);
+   
 	vec3 out_color = vec3(0.0);
 	out_color +=  (u_Ia * color.rgb);
 	
@@ -187,7 +219,7 @@ void main()
 	float R_dot_V;
 	vec3 D;
 
-	vec3 texture_normal = texture(u_normal_map, v_uv).xyz;
+	vec3 texture_normal = texture(u_normal_map, uv).xyz;
 	texture_normal = (texture_normal * 2.0) - 1.0;
 	texture_normal = normalize(texture_normal);
 	vec3 N = perturbNormal(normalize(v_normal), v_world_position, uv, texture_normal);
@@ -237,48 +269,43 @@ void main()
 
 			//Specular
 			R = normalize(reflect(-L, N));
-			V = normalize(u_camera_position - v_world_position);
+			V = normalize(u_camera_pos - v_world_position);
 			R_dot_V = clamp(dot(R,V), 0.0, 1.0);
 			out_color += u_light_color[i] * color.rgb * pow(R_dot_V, u_shininess) * light_intensity * shadow_factor;
 		}
 	}
-	//FragColor = vec4(out_color, color.a);
-	gbuffer_albedo = vec4(out_color.rgb, color.a);
-	gbuffer_normal_mat = vec4(N.x * 0.5 + 0.5, N.y * 0.5 + 0.5, N.z * 0.5 + 0.5, color.a);
+	FragColor = vec4(out_color, color.a);
+	//gbuffer_albedo = vec4(out_color.rgb, color.a);
+	//gbuffer_normal_mat = vec4(N.x * 0.5 + 0.5, N.y * 0.5 + 0.5, N.z * 0.5 + 0.5, color.a);
 	
 
 }
 
 \deferred.fs
-
+ 
 #version 330 core
 const int MAX_LIGHTS = 8;
 in vec2 v_uv;
 in vec4 v_color;
+in vec3 v_normal; 
 
-uniform mat4 u_inv_vp_mat;
 
-uniform sampler2D u_gbuffer_depth;
-uniform sampler2D u_gbuffer_normal;
-uniform sampler2D u_gbuffer_color;
+
+
+
+layout(location = 0) out vec4 gbuffer_albedo;
+layout(location = 1) out vec4 gbuffer_normal_mat;
+
 
 out vec4 FragColor;
 
 void main()
 {
-    vec2 uv = v_uv;
-
-    float depth = texture(u_gbuffer_depth, uv).r;
-    float depth_clip = depth * 2.0 - 1.0;
-    vec2 uv_clip = uv * 2.0 - 1.0;
-    vec4 clip_coords = vec4(uv_clip.x, uv_clip.y, depth_clip, 1.0);
-    vec4 not_norm_world_pos = u_inv_vp_mat * clip_coords;
-    vec3 world_pos = not_norm_world_pos.xyz / not_norm_world_pos.w;
-
-    vec4 color = texture(u_gbuffer_color, uv);
-   
+   	vec3 N = normalize(v_normal);
+    gbuffer_albedo = vec4(v_color.rgb, v_color.a);
+	gbuffer_normal_mat = vec4(N.x * 0.5 + 0.5, N.y * 0.5 + 0.5, N.z * 0.5 + 0.5, v_color.a);
+	
     
-    FragColor = vec4(color.rgb, color.a);
 }
 
 \skybox.fs

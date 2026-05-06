@@ -38,6 +38,7 @@ namespace SCN {
 		void renderDeferredLightingPass(const std::vector<GFX::FBO*>& shadow_fbos);
 		//just to be sure we have everything ready for the rendering
 		void setupScene();
+		void renderOnlyMesh(const Matrix44 model, GFX::Mesh* mesh, SCN::Material* material);
 
 		//add here your functions
 		//...

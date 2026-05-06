@@ -253,12 +253,20 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 	for (auto& p : opaque_pairs) {
 		BoundingBox mesh_box = transformBoundingBox(p.second.model, p.second.mesh->box);
 		if (camera->testBoxInFrustum(mesh_box.center, mesh_box.halfsize)) {
-			renderMeshWithMaterial(p.second.model, p.second.mesh, p.second.material, shadow_fbos);
+			renderOnlyMesh(p.second.model, p.second.mesh, p.second.material);
 		}
 	}
 	gbuffer_fbo->unbind();
+
+	for (auto& p : opaque_pairs) {
+		BoundingBox mesh_box = transformBoundingBox(p.second.model, p.second.mesh->box);
+		if (camera->testBoxInFrustum(mesh_box.center, mesh_box.halfsize)) {
+			renderMeshWithMaterial(p.second.model, p.second.mesh, p.second.material, shadow_fbos);
+		}
+	}
+
+
 	
-	renderDeferredLightingPass(shadow_fbos);
 	// Render transparent objects
 	for (auto& p : transparent_pairs) {
 		BoundingBox mesh_box = transformBoundingBox(p.second.model, p.second.mesh->box);
@@ -271,58 +279,25 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 void Renderer::renderDeferredLightingPass(const std::vector<GFX::FBO*>& shadow_fbos)
 {
 	Camera* camera = Camera::current;
-	Vector2 window_size = CORE::getWindowSize();
+	
 
 	GFX::Shader* shader = GFX::Shader::Get("deferred");
-	if (!shader)
-		return;
-	shader->enable();
-	int texture_slots = 0;
-	shader->setTexture("u_gbuffer_color", gbuffer_fbo->color_textures[0], texture_slots++);
-	shader->setTexture("u_gbuffer_normal", gbuffer_fbo->color_textures[1], texture_slots++);
-	shader->setTexture("u_gbuffer_depth", gbuffer_fbo->depth_texture, texture_slots++);
-	shader->setUniform("u_res_inv", vec2(1.0f / window_size.x, 1.0f / window_size.y));
-	shader->setUniform("u_inv_vp_mat", camera->inverse_viewprojection_matrix);
-	shader->setUniform("u_camera_position", camera->eye);
-	shader->setUniform("u_shadow_bias", shadow_bias);
-	shader->setUniform("u_shininess", 40.0f); // or expose as a global like shadow_bias
-
-	int lights_num = (int)lights_list.size();
-	int num_shadows = (int)shadow_fbos.size() < 8 ? (int)shadow_fbos.size() : 8;
-	int shadow_slots[8] = { 8, 9, 10, 11, 12, 13, 14, 15 };
-	for (int i = 0; i < num_shadows; ++i) {
-		if (shadow_fbos[i] && shadow_fbos[i]->depth_texture) {
-			glActiveTexture(GL_TEXTURE0 + shadow_slots[i]);
-			shadow_fbos[i]->depth_texture->bind();
-		}
-	}
-	shader->setUniform1Array("u_shadowmap", shadow_slots, lights_num < num_shadows ? lights_num : num_shadows);
-	shader->setMatrix44Array("u_light_viewprojection", light_cams_viewproj.data(), lights_num);
-
-	std::vector<int> cast_shadows;
-	for (auto& light : lights_list)
-		cast_shadows.push_back(light->cast_shadows ? 1 : 0);
-	shader->setUniform1Array("u_cast_shadows", cast_shadows.data(), lights_num);
-
-	glDisable(GL_DEPTH_TEST);
-	glDisable(GL_BLEND);
-
-
 	GFX::Mesh* quad = GFX::Mesh::getQuad();
 	quad->render(GL_TRIANGLES);
 
 	glEnable(GL_DEPTH_TEST);
-
-	for (int i = 0; i < num_shadows; ++i) {
-		if (shadow_fbos[i] && shadow_fbos[i]->depth_texture) {
-			glActiveTexture(GL_TEXTURE0 + 8 + i);
-			shadow_fbos[i]->depth_texture->unbind();
-		}
-	}
 	glActiveTexture(GL_TEXTURE0);
 
+	if (!shader)
+		return;
+	shader->enable();
+	
+	
+
+	
 	shader->disable();
 }
+
 void Renderer::renderFBO(Matrix44 model, GFX::Mesh* mesh, SCN::Material* material, Camera* light_cam) { //Create a simple shader to render the shadowmaps on the texture.
 	GFX::Shader* shader = GFX::Shader::Get("plain");
 	if (!shader)
@@ -364,7 +339,7 @@ void Renderer::renderSkybox(GFX::Texture* cubemap)
 	shader->setUniform("u_viewprojection", camera->viewprojection_matrix);
 	shader->setUniform("u_camera_position", camera->eye);
 
-	shader->setUniform("u_texture", cubemap, 0);
+	shader->setUniform("u_texture", cubemap, 5);
 
 	sphere.render(GL_TRIANGLES);
 
@@ -376,6 +351,51 @@ void Renderer::renderSkybox(GFX::Texture* cubemap)
 }
 
 
+
+void Renderer::renderOnlyMesh(const Matrix44 model, GFX::Mesh* mesh, SCN::Material* material) {
+	if (!mesh || !mesh->getNumVertices() || !material)
+		return;
+	assert(glGetError() == GL_NO_ERROR);
+
+	//define locals to simplify coding
+	GFX::Shader* shader = NULL;
+	Camera* camera = Camera::current;
+
+	glEnable(GL_DEPTH_TEST);
+
+	//chose a shader
+	shader = GFX::Shader::Get("material");
+
+	assert(glGetError() == GL_NO_ERROR);
+
+	//no shader? then nothing to render
+	if (!shader)
+		return;
+	shader->enable();
+	material->bind(shader);
+
+	//upload uniforms
+	shader->setUniform("u_model", model);
+
+	// Upload camera uniforms
+	shader->setUniform("u_viewprojection", camera->viewprojection_matrix);
+	shader->setUniform("u_camera_pos", camera->eye);
+
+	float t = getTime();
+	shader->setUniform("u_time", t);
+
+	if (render_wireframe)
+		glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+
+	//do the draw call that renders the mesh into the screen
+	mesh->render(GL_TRIANGLES);
+
+	shader->disable();
+
+	//set the render state as it was before to avoid problems with future renders
+	glDisable(GL_BLEND);
+	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+}
 
 
 // Renders a mesh given its transform and material
@@ -393,6 +413,7 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 	glEnable(GL_DEPTH_TEST);
 
 	//chose a shader
+
 	shader = GFX::Shader::Get("texture");
 
     assert(glGetError() == GL_NO_ERROR);
@@ -400,6 +421,7 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 	//no shader? then nothing to render
 	if (!shader)
 		return;
+	GFX::Mesh* quad = GFX::Mesh::getQuad();
 	shader->enable();
 	material->bind(shader);
 
@@ -408,16 +430,24 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 
 	// Upload camera uniforms
 	shader->setUniform("u_viewprojection", camera->viewprojection_matrix);
-	shader->setUniform("u_camera_position", camera->eye);
+	shader->setUniform("u_camera_pos", camera->eye);
+	shader->setUniform("u_shininess", 40.0f); // or expose as a global like shadow_bias
 
 	// Upload time, for cool shader effects
 	float t = getTime();
 	shader->setUniform("u_time", t );
 
+	Vector2 window_size = CORE::getWindowSize();
+	shader->setUniform("u_res_inv", vec2(1.0f / window_size.x, 1.0f / window_size.y));
 
+	shader->setUniform("u_inv_vp_mat", camera->inverse_viewprojection_matrix); // for deferred
 	sendLightUniforms(shader);
 
-	
+	int texture_slots = 1;
+	shader->setTexture("u_gbuffer_color", gbuffer_fbo->color_textures[0], texture_slots++);
+	shader->setTexture("u_gbuffer_normal", gbuffer_fbo->color_textures[1], texture_slots++);
+	shader->setTexture("u_gbuffer_depth", gbuffer_fbo->depth_texture, texture_slots++);
+
 	
 	int lights_num = (int)lights_list.size();
 	shader->setUniform("u_shadow_bias", shadow_bias); //ImGui value
@@ -464,6 +494,7 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 	}
 
 	//disable shader
+	quad->render(GL_TRIANGLES);
 	shader->disable();
 	
 	//set the render state as it was before to avoid problems with future renders
@@ -493,6 +524,7 @@ void Renderer::sendLightUniforms(GFX::Shader *shader) {
 		light_directions.push_back(p->root.model.frontVector());
 		cone_infos.push_back(vec2(p->cone_info.x * DEG2RAD, p->cone_info.y * DEG2RAD));
 	}
+	
 	shader->setUniform3Array("u_light_color", (float*)light_colors.data(), lights_num);
 	shader->setUniform1Array("u_intensity", light_intensities.data(), lights_num);
 	shader->setUniform3Array("u_light_position", (float*)light_positions.data(), lights_num);
