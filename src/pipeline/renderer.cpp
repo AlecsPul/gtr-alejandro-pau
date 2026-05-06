@@ -258,13 +258,15 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 	}
 	gbuffer_fbo->unbind();
 
+	
+	/*
 	for (auto& p : opaque_pairs) {
 		BoundingBox mesh_box = transformBoundingBox(p.second.model, p.second.mesh->box);
 		if (camera->testBoxInFrustum(mesh_box.center, mesh_box.halfsize)) {
 			renderMeshWithMaterial(p.second.model, p.second.mesh, p.second.material, shadow_fbos);
 		}
 	}
-
+	*/
 
 	
 	// Render transparent objects
@@ -276,24 +278,16 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 	}
 }
 
-void Renderer::renderDeferredLightingPass(const std::vector<GFX::FBO*>& shadow_fbos)
+void Renderer::renderDeferredLightingPass()
 {
 	Camera* camera = Camera::current;
 	
 
 	GFX::Shader* shader = GFX::Shader::Get("deferred");
-	GFX::Mesh* quad = GFX::Mesh::getQuad();
-	quad->render(GL_TRIANGLES);
-
-	glEnable(GL_DEPTH_TEST);
-	glActiveTexture(GL_TEXTURE0);
 
 	if (!shader)
 		return;
 	shader->enable();
-	
-	
-
 	
 	shader->disable();
 }

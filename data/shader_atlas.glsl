@@ -137,12 +137,13 @@ void main()
 #version 330 core
 
 in vec2 v_uv;
-
+in vec3 v_normal;
 uniform vec4 u_color;
 uniform sampler2D u_texture;
 uniform float u_alpha_cutoff;
 
-out vec4 FragColor;
+layout(location = 0) out vec4 gbuffer_albedo;
+layout(location = 1) out vec4 gbuffer_normal_mat;
 
 void main()
 {
@@ -152,7 +153,11 @@ void main()
 	if(color.a < u_alpha_cutoff)
 		discard;
 
-	FragColor = vec4(color.rgb, 1.0);
+	vec3 N = normalize(v_normal);
+
+	gbuffer_albedo = color;
+	gbuffer_normal_mat = vec4(N.x * 0.5 + 0.5, N.y * 0.5 + 0.5, N.z * 0.5 + 0.5, color.a);
+	
 }
 
 
@@ -284,18 +289,14 @@ void main()
 \deferred.fs
  
 #version 330 core
-const int MAX_LIGHTS = 8;
+
 in vec2 v_uv;
 in vec4 v_color;
 in vec3 v_normal; 
 
 
-
-
-
 layout(location = 0) out vec4 gbuffer_albedo;
 layout(location = 1) out vec4 gbuffer_normal_mat;
-
 
 out vec4 FragColor;
 
