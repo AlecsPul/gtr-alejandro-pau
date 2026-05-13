@@ -7,7 +7,7 @@ multi basic.vs multi.fs
 plain basic.vs plain.fs
 deferred quad.vs deferred.fs
 material basic.vs material.fs
-lighting quad.vs deferred_lighting.fs
+lighting basic.vs deferred_lighting.fs
 deferred_lighting quad.vs deferred_lighting.fs
 forward_transparent basic.vs forward_transparent.fs
 

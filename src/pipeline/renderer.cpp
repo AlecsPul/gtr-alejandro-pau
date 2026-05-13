@@ -321,6 +321,8 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 	gbuffer_fbo->depth_texture->copyTo(lighting_fbo->depth_texture);
 
 	lighting_fbo->bind();
+	glDisable(GL_BLEND);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	renderLightingPass(shadow_fbos);
 	lighting_fbo->unbind();
 	lighting_fbo->color_textures[0]->toViewport();
@@ -379,6 +381,39 @@ void Renderer::renderLightingPass(const std::vector<GFX::FBO*>& shadow_fbos)
 	unbindShadowTextures(shadow_fbos);
 
 	shader->disable();
+
+	GFX::Shader* volume_shader = GFX::Shader::Get("lighting");
+	if (volume_shader)
+	{
+		volume_shader->enable();
+
+		volume_shader->setUniform("u_camera_pos", camera->eye);
+		volume_shader->setUniform("u_inv_vp_mat", camera->inverse_viewprojection_matrix);
+		volume_shader->setUniform("u_res_inv", vec2(1.0f / window_size.x, 1.0f / window_size.y));
+		volume_shader->setUniform("u_shadow_bias", shadow_bias);
+		volume_shader->setUniform("u_shininess", 8.0f);
+
+		int volume_texture_slots = 1;
+		volume_shader->setTexture("u_gbuffer_color", gbuffer_fbo->color_textures[0], volume_texture_slots++);
+		volume_shader->setTexture("u_gbuffer_normal", gbuffer_fbo->color_textures[1], volume_texture_slots++);
+		volume_shader->setTexture("u_gbuffer_depth", gbuffer_fbo->depth_texture, volume_texture_slots++);
+
+		glEnable(GL_DEPTH_TEST);
+		glDepthFunc(GL_GREATER);
+		glDepthMask(GL_FALSE);
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_ONE, GL_ONE);
+		glFrontFace(GL_CW);
+
+		sendLightUniforms(volume_shader);
+
+		glFrontFace(GL_CCW);
+		glDisable(GL_BLEND);
+		glDepthMask(GL_TRUE);
+		glDepthFunc(GL_LESS);
+		volume_shader->disable();
+	}
+
 	glEnable(GL_DEPTH_TEST);
 }
 
@@ -551,6 +586,70 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 
 void Renderer::sendLightUniforms(GFX::Shader *shader) {
 	int lights_num = (int)lights_list.size();
+	const bool render_light_volumes = shader == GFX::Shader::Get("lighting");
+	const bool deferred_directional_pass = shader == GFX::Shader::Get("deferred_lighting");
+
+	if (render_light_volumes)
+	{
+		Camera* camera = Camera::current;
+		shader->setUniform("u_Ia", vec3(0.0f, 0.0f, 0.0f));
+
+		int light_index = 0;
+		for (auto& p : lights_list) {
+			Matrix44 light_model = p->root.getGlobalMatrix();
+			if (p->light_type == DIRECTIONAL)
+			{
+				++light_index;
+				continue;
+			}
+
+			Vector3f light_color[1] = { p->color };
+			float light_intensity[1] = { p->intensity };
+			Vector3f light_position[1] = { light_model.getTranslation() };
+			int light_type[1] = { (int)p->light_type };
+			Vector3f light_direction[1] = { getLightForward(light_model) };
+			Vector2f cone_info[1] = { vec2(p->cone_info.x * DEG2RAD, p->cone_info.y * DEG2RAD) };
+
+			shader->setUniform("u_num_lights", 1);
+			shader->setUniform3Array("u_light_color", (float*)light_color, 1);
+			shader->setUniform1Array("u_intensity", light_intensity, 1);
+			shader->setUniform3Array("u_light_position", (float*)light_position, 1);
+			shader->setUniform1Array("u_light_type", light_type, 1);
+			shader->setUniform3Array("u_light_direction", (float*)light_direction, 1);
+			shader->setUniform2Array("u_cone_infos", (float*)cone_info, 1);
+
+			int shadow_slot[1] = { 8 };
+			int cast_shadows[1] = { p->cast_shadows ? 1 : 0 };
+			Matrix44 light_viewproj[1] = { light_cams_viewproj[light_index] };
+			if (p->cast_shadows && light_index < (int)shadow_fbos.size() && shadow_fbos[light_index] && shadow_fbos[light_index]->depth_texture)
+			{
+				glActiveTexture(GL_TEXTURE0 + shadow_slot[0]);
+				shadow_fbos[light_index]->depth_texture->bind();
+			}
+			shader->setUniform1Array("u_shadowmap", shadow_slot, 1);
+			shader->setMatrix44Array("u_light_viewprojection", light_viewproj, 1);
+			shader->setUniform1Array("u_cast_shadows", cast_shadows, 1);
+
+			Matrix44 volume_model;
+			vec3 light_pos = light_model.getTranslation();
+			volume_model.setTranslation(light_pos.x, light_pos.y, light_pos.z);
+			volume_model.scale(p->max_distance, p->max_distance, p->max_distance);
+			shader->setUniform("u_model", volume_model);
+			shader->setUniform("u_viewprojection", camera->viewprojection_matrix);
+
+			sphere.render(GL_TRIANGLES);
+
+			if (p->cast_shadows && light_index < (int)shadow_fbos.size() && shadow_fbos[light_index] && shadow_fbos[light_index]->depth_texture)
+			{
+				glActiveTexture(GL_TEXTURE0 + shadow_slot[0]);
+				shadow_fbos[light_index]->depth_texture->unbind();
+				glActiveTexture(GL_TEXTURE0);
+			}
+
+			++light_index;
+		}
+		return;
+	}
 
 	shader->setUniform("u_Ia", scene->ambient_light);
 	shader->setUniform("u_num_lights", lights_num);
@@ -564,18 +663,12 @@ void Renderer::sendLightUniforms(GFX::Shader *shader) {
 	std::vector<Vector2f> cone_infos;
 	std::vector<Matrix44> light_models;
 
-	glDepthFunc(GL_GREATER);
-	glDepthMask(GL_FALSE);
-	glBlendFunc(GL_ONE, GL_ONE);
-	glEnable(GL_BLEND);
-	glFrontFace(GL_CW);
-
 	for (auto& p : lights_list) {
 		Matrix44 light_model = p->root.getGlobalMatrix();
 		light_models.push_back(light_model);
 		light_colors.push_back(p->color);
 		light_positions.push_back(light_model.getTranslation());
-		light_intensities.push_back(p->intensity);
+      light_intensities.push_back(deferred_directional_pass && p->light_type != DIRECTIONAL ? 0.0f : p->intensity);
 		light_types.push_back(p->light_type);
 		light_directions.push_back(getLightForward(light_model));
 		cone_infos.push_back(vec2(p->cone_info.x * DEG2RAD, p->cone_info.y * DEG2RAD));
