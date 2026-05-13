@@ -34,7 +34,7 @@ namespace SCN {
 		GFX::FBO* lighting_fbo = nullptr;
 		//updated every frame
 		Renderer(const char* shaders_atlas_filename );
-		void sendLightUniforms(GFX::Shader *shader);
+		void sendLightUniforms(GFX::Shader *shader, bool is_volume);
 		void renderDeferredLightingPass();
 		//just to be sure we have everything ready for the rendering
 		void setupScene();

@@ -367,7 +367,7 @@ void Renderer::renderLightingPass(const std::vector<GFX::FBO*>& shadow_fbos)
 	shader->setUniform("u_shadow_bias", shadow_bias);
 	shader->setUniform("u_shininess", 8.0f);
 
-	sendLightUniforms(shader);
+	sendLightUniforms(shader, false);
 
 	int texture_slots = 1;
 	shader->setTexture("u_gbuffer_color", gbuffer_fbo->color_textures[0], texture_slots++);
@@ -405,7 +405,7 @@ void Renderer::renderLightingPass(const std::vector<GFX::FBO*>& shadow_fbos)
 		glBlendFunc(GL_ONE, GL_ONE);
 		glFrontFace(GL_CW);
 
-		sendLightUniforms(volume_shader);
+		sendLightUniforms(volume_shader, true);
 
 		glFrontFace(GL_CCW);
 		glDisable(GL_BLEND);
@@ -561,7 +561,7 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 	// Upload time, for cool shader effects
 	float t = getTime();
 	shader->setUniform("u_time", t );
-	sendLightUniforms(shader);
+	sendLightUniforms(shader, false);
 
 	shader->setUniform("u_shadow_bias", shadow_bias); //ImGui value
 	bindShadowUniforms(shader, shadow_fbos, light_cams_viewproj, lights_list);
@@ -584,12 +584,10 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 	glPolygonMode( GL_FRONT_AND_BACK, GL_FILL );
 }
 
-void Renderer::sendLightUniforms(GFX::Shader *shader) {
+void Renderer::sendLightUniforms(GFX::Shader *shader, bool is_volume) {
 	int lights_num = (int)lights_list.size();
-	const bool render_light_volumes = shader == GFX::Shader::Get("lighting");
-	const bool deferred_directional_pass = shader == GFX::Shader::Get("deferred_lighting");
-
-	if (render_light_volumes)
+	
+	if (is_volume)
 	{
 		Camera* camera = Camera::current;
 		shader->setUniform("u_Ia", vec3(0.0f, 0.0f, 0.0f));
@@ -668,7 +666,7 @@ void Renderer::sendLightUniforms(GFX::Shader *shader) {
 		light_models.push_back(light_model);
 		light_colors.push_back(p->color);
 		light_positions.push_back(light_model.getTranslation());
-      light_intensities.push_back(deferred_directional_pass && p->light_type != DIRECTIONAL ? 0.0f : p->intensity);
+       light_intensities.push_back(!is_volume && p->light_type != DIRECTIONAL ? 0.0f : p->intensity);
 		light_types.push_back(p->light_type);
 		light_directions.push_back(getLightForward(light_model));
 		cone_infos.push_back(vec2(p->cone_info.x * DEG2RAD, p->cone_info.y * DEG2RAD));
