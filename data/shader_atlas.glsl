@@ -1,13 +1,15 @@
 //example of some shaders compiled
 flat basic.vs flat.fs
-texture basic.vs texture.fs
+texture basic.vs forward_transparent.fs
 skybox basic.vs skybox.fs
 depth quad.vs depth.fs
 multi basic.vs multi.fs
 plain basic.vs plain.fs
 deferred quad.vs deferred.fs
 material basic.vs material.fs
-lighting quad.vs texture.fs
+lighting quad.vs deferred_lighting.fs
+deferred_lighting quad.vs deferred_lighting.fs
+forward_transparent basic.vs forward_transparent.fs
 
 \perturbNormal
 
@@ -66,12 +68,11 @@ uniform float u_time;
 
 void main()
 {	
-	//calcule the normal in camera space (the NormalMatrix is like ViewMatrix but without traslation)
-	v_normal = (u_model * vec4( a_normal, 0.0) ).xyz;
-	
 	//calcule the vertex in object space
 	v_position = a_vertex;
 	v_world_position = (u_model * vec4( v_position, 1.0) ).xyz;
+	mat3 normal_matrix = mat3(transpose(inverse(u_model)));
+	v_normal = normalize(normal_matrix * a_normal);
 	
 	//store the color in the varying var to use it from the pixel shader
 	v_color = a_color;
@@ -132,9 +133,9 @@ uniform sampler2D u_texture;
 
 void main()
 {
-	// Note: maybe some alpha testing could be
-	// good here. ..
 	vec4 color = u_color * texture(u_texture, v_uv);
+	if(color.a < u_alpha_cutoff)
+		discard;
 	
 	FragColor = vec4(0.0, 0.0, 0.0, 1.0);
 
@@ -185,20 +186,17 @@ void main()
 }
 
 
-\texture.fs
+\forward_transparent.fs
 
 #version 330 core
 #include "perturbNormal"
 const int MAX_LIGHTS = 8;
-in vec3 v_position;
 in vec3 v_world_position;
 in vec3 v_normal;
 in vec2 v_uv;
-in vec4 v_color;
 
 uniform vec3 u_light_position[MAX_LIGHTS];
 uniform vec3 u_Ia;
-
 
 uniform float u_shininess;
 uniform vec3 u_camera_pos;
@@ -213,6 +211,112 @@ uniform float u_alpha_cutoff;
 uniform int u_num_lights;
 uniform vec2 u_cone_infos[MAX_LIGHTS]; // x=alpha_min, y=alpha_max
 uniform sampler2D u_normal_map;
+uniform int u_has_normal_map;
+uniform sampler2D u_shadowmap[MAX_LIGHTS];
+uniform mat4 u_light_viewprojection[MAX_LIGHTS];
+uniform int u_cast_shadows[MAX_LIGHTS];
+uniform float u_shadow_bias;
+
+out vec4 FragColor;
+
+float computeShadowFactor(int light_index, vec3 world_pos)
+{
+	if(u_cast_shadows[light_index] == 0)
+		return 1.0;
+
+	vec4 proj_pos = u_light_viewprojection[light_index] * vec4(world_pos, 1.0);
+	proj_pos /= proj_pos.w;
+	proj_pos = (proj_pos + 1.0) * 0.5;
+	if (proj_pos.x < 0.0 || proj_pos.x > 1.0 || proj_pos.y < 0.0 || proj_pos.y > 1.0 || proj_pos.z < 0.0 || proj_pos.z > 1.0)
+		return 1.0;
+
+	float shadow_depth = texture(u_shadowmap[light_index], proj_pos.xy).r;
+	float real_depth = proj_pos.z - u_shadow_bias;
+	return real_depth > shadow_depth ? 0.0 : 1.0;
+}
+
+void main()
+{
+	vec2 uv = v_uv;
+	vec4 color = u_color * texture( u_texture, uv );
+	if(color.a < u_alpha_cutoff)
+		discard;
+	
+	vec3 N = normalize(v_normal);
+	if(u_has_normal_map == 1){
+		vec3 texture_normal = texture(u_normal_map, uv).xyz;
+		texture_normal = (texture_normal * 2.0) - 1.0;
+		N = perturbNormal(normalize(v_normal), v_world_position, uv, normalize(texture_normal));
+	}
+
+	vec3 out_color = u_Ia * color.rgb;
+	vec3 V = normalize(u_camera_pos - v_world_position);
+	vec3 L;
+	vec3 R;
+	float light_intensity;
+	float R_dot_V;
+	vec3 light_forward;
+	float N_dot_L;
+
+	for(int i = 0; i < MAX_LIGHTS && i < u_num_lights; ++i){
+		light_forward = normalize(u_light_direction[i]);
+		if(u_light_type[i] == 3) {
+			L = normalize(-light_forward);
+			light_intensity = u_intensity[i];
+		}
+		else {
+			vec3 to_light = u_light_position[i] - v_world_position;
+			float dist_sq = max(dot(to_light, to_light), 0.0001);
+			L = normalize(to_light);
+			light_intensity = u_intensity[i] / dist_sq;
+
+			if(u_light_type[i] == 2){
+				float cone_angle = dot(normalize(v_world_position - u_light_position[i]), light_forward);
+				float outer_cos = cos(u_cone_infos[i].y);
+				float inner_cos = cos(u_cone_infos[i].x);
+				if(cone_angle >= outer_cos){
+					float cone_den = max(inner_cos - outer_cos, 0.0001);
+					light_intensity *= clamp((cone_angle - outer_cos) / cone_den, 0.0, 1.0);
+				}
+				else{
+					light_intensity = 0.0;
+				}
+			}
+		}
+
+		N_dot_L = clamp(dot(L, N), 0.0, 1.0);
+		if (N_dot_L <= 0.0 || light_intensity <= 0.0)
+			continue;
+
+		float shadow_factor = computeShadowFactor(i, v_world_position);
+		out_color += u_light_color[i] * color.rgb * N_dot_L * light_intensity * shadow_factor;
+
+		R = normalize(reflect(-L, N));
+		R_dot_V = clamp(dot(R, V), 0.0, 1.0);
+		out_color += u_light_color[i] * color.rgb * pow(R_dot_V, u_shininess) * light_intensity * shadow_factor;
+	}
+
+	FragColor = vec4(out_color, color.a);
+}
+
+\deferred_lighting.fs
+
+#version 330 core
+const int MAX_LIGHTS = 8;
+
+in vec2 v_uv;
+
+uniform vec3 u_light_position[MAX_LIGHTS];
+uniform vec3 u_Ia;
+uniform float u_shininess;
+uniform vec3 u_camera_pos;
+uniform float u_intensity[MAX_LIGHTS];
+uniform vec3 u_light_color[MAX_LIGHTS];
+uniform int u_light_type[MAX_LIGHTS];
+uniform vec3 u_light_direction[MAX_LIGHTS];
+uniform float u_alpha_cutoff;
+uniform int u_num_lights;
+uniform vec2 u_cone_infos[MAX_LIGHTS];
 uniform sampler2D u_shadowmap[MAX_LIGHTS];
 uniform mat4 u_light_viewprojection[MAX_LIGHTS];
 uniform int u_cast_shadows[MAX_LIGHTS];
@@ -223,95 +327,88 @@ uniform sampler2D u_gbuffer_normal;
 uniform sampler2D u_gbuffer_color;
 uniform mat4 u_inv_vp_mat;
 uniform vec2 u_res_inv;
+
 out vec4 FragColor;
+
+float computeShadowFactor(int light_index, vec3 world_pos)
+{
+	if(u_cast_shadows[light_index] == 0)
+		return 1.0;
+
+	vec4 proj_pos = u_light_viewprojection[light_index] * vec4(world_pos, 1.0);
+	proj_pos /= proj_pos.w;
+	proj_pos = (proj_pos + 1.0) * 0.5;
+	if (proj_pos.x < 0.0 || proj_pos.x > 1.0 || proj_pos.y < 0.0 || proj_pos.y > 1.0 || proj_pos.z < 0.0 || proj_pos.z > 1.0)
+		return 1.0;
+
+	float shadow_depth = texture(u_shadowmap[light_index], proj_pos.xy).r;
+	float real_depth = proj_pos.z - u_shadow_bias;
+	return real_depth > shadow_depth ? 0.0 : 1.0;
+}
 
 void main()
 {
 	vec2 uv = gl_FragCoord.xy * u_res_inv;
-
-    float depth = texture(u_gbuffer_depth, uv).r;
-
+	float depth = texture(u_gbuffer_depth, uv).r;
 	if(depth == 1.0)
 		discard;
-    float depth_clip = depth * 2.0 - 1.0;
-    vec2 uv_clip = uv * 2.0 - 1.0;
 
+	float depth_clip = depth * 2.0 - 1.0;
+	vec2 uv_clip = uv * 2.0 - 1.0;
+	vec4 clip_coords = vec4(uv_clip.x, uv_clip.y, depth_clip, 1.0);
+	vec4 not_norm_world_pos = u_inv_vp_mat * clip_coords;
+	vec3 world_pos = not_norm_world_pos.xyz / not_norm_world_pos.w;
 
-    vec4 clip_coords = vec4(uv_clip.x, uv_clip.y, depth_clip, 1.0);
-    vec4 not_norm_world_pos = u_inv_vp_mat * clip_coords;
-    vec3 world_pos = not_norm_world_pos.xyz / not_norm_world_pos.w;
-
-    vec4 color = texture(u_gbuffer_color, uv);
-   
-   
-	vec3 out_color = vec3(0.0);
-	out_color +=  (u_Ia * color.rgb);
-	
+	vec4 color = texture(u_gbuffer_color, uv);
+	vec3 N = normalize(texture(u_gbuffer_normal, uv).xyz * 2.0 - 1.0);
+	vec3 out_color = u_Ia * color.rgb;
+	vec3 V = normalize(u_camera_pos - world_pos);
 	vec3 L;
-	float N_dot_L;
 	vec3 R;
+	vec3 light_forward;
 	float light_intensity;
-	vec3 V;
+	float N_dot_L;
 	float R_dot_V;
-	vec3 D;
 
-	vec3 texture_normal = texture(u_gbuffer_normal, uv).xyz;
-	vec3 N = normalize(texture_normal * 2.0 - 1.0);
-	for(int i = 0; i < MAX_LIGHTS; i++){
-		//Attenuation
+	for(int i = 0; i < MAX_LIGHTS && i < u_num_lights; ++i){
+		light_forward = normalize(u_light_direction[i]);
+		if(u_light_type[i] == 3) {
+			L = normalize(-light_forward);
+			light_intensity = u_intensity[i];
+		}
+		else {
+			vec3 to_light = u_light_position[i] - world_pos;
+			float dist_sq = max(dot(to_light, to_light), 0.0001);
+			L = normalize(to_light);
+			light_intensity = u_intensity[i] / dist_sq;
 
-		if(i < u_num_lights){
-			light_intensity = u_intensity[i]/(pow(distance(u_light_position[i], world_pos), 2.0));
-			//Difuse
-		
-			D = normalize(u_light_direction[i]);
-			if(u_light_type[i] == 3) {
-				L = D;
-				light_intensity = u_intensity[i];
-			} 
-			else if(u_light_type[i] == 2){
-				L = normalize(u_light_position[i] - world_pos);
-				if(clamp(dot(L, D), 0.0, 1.0) >= clamp(cos(u_cone_infos[i].y), 0.0, 1.0)){
-					light_intensity *= (clamp(dot(L, D), 0.0, 1.0) - clamp(cos(u_cone_infos[i].y), 0.0, 1.0)) / (clamp(cos(u_cone_infos[i].x), 0.0, 1.0) - clamp(cos(u_cone_infos[i].y), 0.0, 1.0));
+			if(u_light_type[i] == 2){
+				float cone_angle = dot(normalize(world_pos - u_light_position[i]), light_forward);
+				float outer_cos = cos(u_cone_infos[i].y);
+				float inner_cos = cos(u_cone_infos[i].x);
+				if(cone_angle >= outer_cos){
+					float cone_den = max(inner_cos - outer_cos, 0.0001);
+					light_intensity *= clamp((cone_angle - outer_cos) / cone_den, 0.0, 1.0);
 				}
 				else{
 					light_intensity = 0.0;
 				}
 			}
-			else {
-				L = normalize(u_light_position[i] - world_pos);
-			}
-			N_dot_L = clamp(dot(L,N), 0.0, 1.0);
-
-			// Apply shadow factor before adding light contribution
-			float shadow_factor = 1.0;
-			if(u_cast_shadows[i] == 1){
-				vec4 proj_pos = u_light_viewprojection[i] * vec4(world_pos, 1.0);
-				proj_pos /= proj_pos.w;
-				proj_pos = (proj_pos + 1.0) * 0.5;
-				if (proj_pos.x >= 0.0 && proj_pos.x <= 1.0 && proj_pos.y >= 0.0 && proj_pos.y <= 1.0) {
-					float shadow_depth = texture(u_shadowmap[i], proj_pos.xy).r;
-					float bias = 0.005;
-					float real_depth = proj_pos.z - u_shadow_bias;
-					if (real_depth > shadow_depth)
-						shadow_factor = 0;
-				}
-			}
-
-			out_color += u_light_color[i] * color.rgb * N_dot_L * light_intensity * shadow_factor;
-
-			//Specular
-			R = normalize(reflect(-L, N));
-			V = normalize(u_camera_pos - world_pos);
-			R_dot_V = clamp(dot(R,V), 0.0, 1.0);
-			out_color += u_light_color[i] * color.rgb * pow(R_dot_V, u_shininess) * light_intensity * shadow_factor;
 		}
-	}
-	FragColor = vec4(out_color, color.a);
-	//gbuffer_albedo = vec4(out_color.rgb, color.a);
-	//gbuffer_normal_mat = vec4(N.x * 0.5 + 0.5, N.y * 0.5 + 0.5, N.z * 0.5 + 0.5, color.a);
-	
 
+		N_dot_L = clamp(dot(L, N), 0.0, 1.0);
+		if (N_dot_L <= 0.0 || light_intensity <= 0.0)
+			continue;
+
+		float shadow_factor = computeShadowFactor(i, world_pos);
+		out_color += u_light_color[i] * color.rgb * N_dot_L * light_intensity * shadow_factor;
+
+		R = normalize(reflect(-L, N));
+		R_dot_V = clamp(dot(R, V), 0.0, 1.0);
+		out_color += u_light_color[i] * color.rgb * pow(R_dot_V, u_shininess) * light_intensity * shadow_factor;
+	}
+
+	FragColor = vec4(out_color, color.a);
 }
 
 \deferred.fs
@@ -447,12 +544,11 @@ out vec2 v_uv;
 
 void main()
 {	
-	//calcule the normal in camera space (the NormalMatrix is like ViewMatrix but without traslation)
-	v_normal = (u_model * vec4( a_normal, 0.0) ).xyz;
-	
 	//calcule the vertex in object space
 	v_position = a_vertex;
 	v_world_position = (u_model * vec4( a_vertex, 1.0) ).xyz;
+	mat3 normal_matrix = mat3(transpose(inverse(u_model)));
+	v_normal = normalize(normal_matrix * a_normal);
 	
 	//store the texture coordinates
 	v_uv = a_coord;
