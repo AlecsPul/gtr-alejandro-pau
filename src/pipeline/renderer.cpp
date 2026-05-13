@@ -300,6 +300,11 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 		gbuffer_fbo->create(window_size.x, window_size.y, 2, GL_RGBA, GL_UNSIGNED_BYTE, true);
 	}
 
+
+	if (!lighting_fbo) {
+		lighting_fbo = new GFX::FBO();
+		lighting_fbo->create(window_size.x, window_size.y, 2, GL_RGBA, GL_UNSIGNED_BYTE, true);
+	}
 	gbuffer_fbo->bind();
 	glEnable(GL_DEPTH_TEST);
 	glDepthMask(true);
@@ -313,7 +318,13 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 	}
 	gbuffer_fbo->unbind();
 
+	gbuffer_fbo->depth_texture->copyTo(lighting_fbo->depth_texture);
+
+	lighting_fbo->bind();
 	renderLightingPass(shadow_fbos);
+	lighting_fbo->unbind();
+	lighting_fbo->color_textures[0]->toViewport();
+
 	if (gbuffer_fbo->depth_texture)
 		gbuffer_fbo->depth_texture->copyTo(nullptr);
 	
@@ -551,9 +562,17 @@ void Renderer::sendLightUniforms(GFX::Shader *shader) {
 	std::vector<int> light_types;
 	std::vector<Vector3f> light_directions;
 	std::vector<Vector2f> cone_infos;
+	std::vector<Matrix44> light_models;
+
+	glDepthFunc(GL_GREATER);
+	glDepthMask(GL_FALSE);
+	glBlendFunc(GL_ONE, GL_ONE);
+	glEnable(GL_BLEND);
+	glFrontFace(GL_CW);
 
 	for (auto& p : lights_list) {
 		Matrix44 light_model = p->root.getGlobalMatrix();
+		light_models.push_back(light_model);
 		light_colors.push_back(p->color);
 		light_positions.push_back(light_model.getTranslation());
 		light_intensities.push_back(p->intensity);
@@ -562,6 +581,8 @@ void Renderer::sendLightUniforms(GFX::Shader *shader) {
 		cone_infos.push_back(vec2(p->cone_info.x * DEG2RAD, p->cone_info.y * DEG2RAD));
 	}
 	
+
+	shader->setMatrix44Array("u_light_models", light_models.data(), lights_num);
 	shader->setUniform3Array("u_light_color", (float*)light_colors.data(), lights_num);
 	shader->setUniform1Array("u_intensity", light_intensities.data(), lights_num);
 	shader->setUniform3Array("u_light_position", (float*)light_positions.data(), lights_num);
@@ -569,7 +590,8 @@ void Renderer::sendLightUniforms(GFX::Shader *shader) {
 	shader->setUniform3Array("u_light_direction", (float*)light_directions.data(), lights_num);
 	shader->setUniform2Array("u_cone_infos", (float*)cone_infos.data(), lights_num);
 
-
+	
+	
 	
 }
 #ifndef SKIP_IMGUI

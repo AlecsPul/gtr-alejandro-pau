@@ -217,6 +217,7 @@ uniform mat4 u_light_viewprojection[MAX_LIGHTS];
 uniform int u_cast_shadows[MAX_LIGHTS];
 uniform float u_shadow_bias;
 
+
 out vec4 FragColor;
 
 float computeShadowFactor(int light_index, vec3 world_pos)
