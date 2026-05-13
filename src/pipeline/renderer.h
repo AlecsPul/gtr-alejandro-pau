@@ -44,7 +44,7 @@ namespace SCN {
 		//...
 		void renderFBO(const Matrix44 model, GFX::Mesh* mesh, SCN::Material* material, Camera* light_cam);
 		void parseSceneEntities(SCN::Scene* scene, Camera* camera);
-
+		void renderLightingPass(const std::vector<GFX::FBO*>& shadow_fbos);
 		//renders several elements of the scene
 		void renderScene(SCN::Scene* scene, Camera* camera);
 

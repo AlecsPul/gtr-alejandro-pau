@@ -258,15 +258,8 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 	}
 	gbuffer_fbo->unbind();
 
+	renderLightingPass(shadow_fbos);
 	
-	/*
-	for (auto& p : opaque_pairs) {
-		BoundingBox mesh_box = transformBoundingBox(p.second.model, p.second.mesh->box);
-		if (camera->testBoxInFrustum(mesh_box.center, mesh_box.halfsize)) {
-			renderMeshWithMaterial(p.second.model, p.second.mesh, p.second.material, shadow_fbos);
-		}
-	}
-	*/
 
 	
 	// Render transparent objects
@@ -278,18 +271,65 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 	}
 }
 
-void Renderer::renderDeferredLightingPass()
+void Renderer::renderLightingPass(const std::vector<GFX::FBO*>& shadow_fbos)
 {
-	Camera* camera = Camera::current;
-	
-
-	GFX::Shader* shader = GFX::Shader::Get("deferred");
-
+	GFX::Shader* shader = GFX::Shader::Get("lighting");
 	if (!shader)
 		return;
+
+	Camera* camera = Camera::current;
+	Vector2 window_size = CORE::getWindowSize();
+	GFX::Mesh* quad = GFX::Mesh::getQuad();
+
+	glDisable(GL_DEPTH_TEST);
+	glDisable(GL_BLEND);
+
 	shader->enable();
-	
+
+	shader->setUniform("u_camera_pos", camera->eye);
+	shader->setUniform("u_inv_vp_mat", camera->inverse_viewprojection_matrix);
+	shader->setUniform("u_res_inv", vec2(1.0f / window_size.x, 1.0f / window_size.y));
+	shader->setUniform("u_shadow_bias", shadow_bias);
+
+	sendLightUniforms(shader);
+
+	int texture_slots = 1;
+	shader->setTexture("u_gbuffer_color", gbuffer_fbo->color_textures[0], texture_slots++);
+	shader->setTexture("u_gbuffer_normal", gbuffer_fbo->color_textures[1], texture_slots++);
+	shader->setTexture("u_gbuffer_depth", gbuffer_fbo->depth_texture, texture_slots++);
+
+	int lights_num = (int)lights_list.size();
+	int num_shadows = (int)shadow_fbos.size() < 8 ? (int)shadow_fbos.size() : 8;
+	int shadow_slots[8] = { 8, 9, 10, 11, 12, 13, 14, 15 };
+
+	for (int i = 0; i < num_shadows; ++i) {
+		if (shadow_fbos[i] && shadow_fbos[i]->depth_texture) {
+			glActiveTexture(GL_TEXTURE0 + shadow_slots[i]);
+			shadow_fbos[i]->depth_texture->bind();
+		}
+	}
+
+	shader->setUniform1Array("u_shadowmap", shadow_slots, lights_num < num_shadows ? lights_num : num_shadows);
+	shader->setMatrix44Array("u_light_viewprojection", light_cams_viewproj.data(), lights_num);
+
+	std::vector<int> cast_shadows;
+	for (auto& light : lights_list)
+		cast_shadows.push_back(light->cast_shadows ? 1 : 0);
+
+	shader->setUniform1Array("u_cast_shadows", cast_shadows.data(), lights_num);
+
+	quad->render(GL_TRIANGLES);
+
+	for (int i = 0; i < num_shadows; ++i) {
+		if (shadow_fbos[i] && shadow_fbos[i]->depth_texture) {
+			glActiveTexture(GL_TEXTURE0 + shadow_slots[i]);
+			shadow_fbos[i]->depth_texture->unbind();
+		}
+	}
+	glActiveTexture(GL_TEXTURE0);
+
 	shader->disable();
+	glEnable(GL_DEPTH_TEST);
 }
 
 void Renderer::renderFBO(Matrix44 model, GFX::Mesh* mesh, SCN::Material* material, Camera* light_cam) { //Create a simple shader to render the shadowmaps on the texture.
@@ -297,10 +337,16 @@ void Renderer::renderFBO(Matrix44 model, GFX::Mesh* mesh, SCN::Material* materia
 	if (!shader)
 		return;
 	shader->enable();
+	if (material)
+		material->bind(shader);
 	shader->setUniform("u_model", model);
 	shader->setUniform("u_viewprojection", light_cam->viewprojection_matrix);
+	
 	mesh->render(GL_TRIANGLES);
 	shader->disable();
+
+	glDisable(GL_BLEND);
+	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 }
 
 
@@ -473,7 +519,7 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 		glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
 
 	//do the draw call that renders the mesh into the screen
-	mesh->render(GL_TRIANGLES);
+	
 
 	// Unbind shadow map textures to avoid state leakage into subsequent renders
 	{
@@ -511,11 +557,12 @@ void Renderer::sendLightUniforms(GFX::Shader *shader) {
 	std::vector<Vector2f> cone_infos;
 
 	for (auto& p : lights_list) {
+		Matrix44 light_model = p->root.getGlobalMatrix();
 		light_colors.push_back(p->color);
-		light_positions.push_back(p->root.model.getTranslation());
+		light_positions.push_back(light_model.getTranslation());
 		light_intensities.push_back(p->intensity);
 		light_types.push_back(p->light_type);
-		light_directions.push_back(p->root.model.frontVector());
+		light_directions.push_back(light_model.frontVector());
 		cone_infos.push_back(vec2(p->cone_info.x * DEG2RAD, p->cone_info.y * DEG2RAD));
 	}
 	

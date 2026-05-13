@@ -98,7 +98,8 @@ void Material::bind(GFX::Shader* shader) {
 		
 		shader->setUniform("u_color", color);
 		shader->setUniform("u_shininess", shininess);
-		
+		shader->setUniform("u_has_normal_map", normal_map ? 1 : 0);
+
 		if (texture)
 			shader->setUniform("u_texture", texture, 0);
 		

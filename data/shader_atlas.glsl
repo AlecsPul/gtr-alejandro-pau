@@ -7,7 +7,7 @@ multi basic.vs multi.fs
 plain basic.vs plain.fs
 deferred quad.vs deferred.fs
 material basic.vs material.fs
-
+lighting quad.vs texture.fs
 
 \perturbNormal
 
@@ -122,26 +122,40 @@ void main()
 \plain.fs
 
 #version 330 core
-
+in vec2 v_uv;
 out vec4 FragColor;
+uniform mat4 u_model;
+uniform mat4 u_viewprojection;
+uniform vec4 u_color;
+uniform float u_alpha_cutoff;
+uniform sampler2D u_texture;
 
 void main()
 {
 	// Note: maybe some alpha testing could be
 	// good here. ..
+	vec4 color = u_color * texture(u_texture, v_uv);
+	
 	FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+
+	
 }
 
 \material.fs
 
 #version 330 core
-
+#include "perturbNormal"
 in vec2 v_uv;
 in vec3 v_normal;
+in vec3 v_world_position;
+
+uniform sampler2D u_normal_map;
 uniform vec4 u_color;
 uniform sampler2D u_texture;
 uniform float u_alpha_cutoff;
+uniform int u_has_normal_map;
 
+out vec4 FragColor;
 layout(location = 0) out vec4 gbuffer_albedo;
 layout(location = 1) out vec4 gbuffer_normal_mat;
 
@@ -149,12 +163,22 @@ void main()
 {
 	vec2 uv = v_uv;
 	vec4 color = u_color;
+	vec3 N;
+	if(u_has_normal_map == 1){
+	vec3 texture_normal = texture(u_normal_map, uv).xyz;
+	
+	texture_normal = (texture_normal * 2.0) - 1.0;
+	
+		N = perturbNormal(normalize(v_normal), v_world_position, uv, normalize(texture_normal));
+	}
+	else{
+		N = normalize(v_normal);
+	}
 	color *= texture( u_texture, uv );
+	
 	if(color.a < u_alpha_cutoff)
 		discard;
-
-	vec3 N = normalize(v_normal);
-
+	
 	gbuffer_albedo = color;
 	gbuffer_normal_mat = vec4(N.x * 0.5 + 0.5, N.y * 0.5 + 0.5, N.z * 0.5 + 0.5, color.a);
 	
@@ -198,20 +222,27 @@ uniform sampler2D u_gbuffer_depth;
 uniform sampler2D u_gbuffer_normal;
 uniform sampler2D u_gbuffer_color;
 uniform mat4 u_inv_vp_mat;
+uniform vec2 u_res_inv;
 out vec4 FragColor;
 
 void main()
 {
-	vec2 uv = v_uv;
+	vec2 uv = gl_FragCoord.xy * u_res_inv;
 
     float depth = texture(u_gbuffer_depth, uv).r;
+
+	if(depth == 1.0)
+		discard;
     float depth_clip = depth * 2.0 - 1.0;
     vec2 uv_clip = uv * 2.0 - 1.0;
+
+
     vec4 clip_coords = vec4(uv_clip.x, uv_clip.y, depth_clip, 1.0);
     vec4 not_norm_world_pos = u_inv_vp_mat * clip_coords;
     vec3 world_pos = not_norm_world_pos.xyz / not_norm_world_pos.w;
 
     vec4 color = texture(u_gbuffer_color, uv);
+   
    
 	vec3 out_color = vec3(0.0);
 	out_color +=  (u_Ia * color.rgb);
@@ -224,16 +255,13 @@ void main()
 	float R_dot_V;
 	vec3 D;
 
-	vec3 texture_normal = texture(u_normal_map, uv).xyz;
-	texture_normal = (texture_normal * 2.0) - 1.0;
-	texture_normal = normalize(texture_normal);
-	vec3 N = perturbNormal(normalize(v_normal), v_world_position, uv, texture_normal);
-
+	vec3 texture_normal = texture(u_gbuffer_normal, uv).xyz;
+	vec3 N = normalize(texture_normal * 2.0 - 1.0);
 	for(int i = 0; i < MAX_LIGHTS; i++){
 		//Attenuation
 
 		if(i < u_num_lights){
-			light_intensity = u_intensity[i]/(pow(distance(u_light_position[i], v_world_position), 2.0));
+			light_intensity = u_intensity[i]/(pow(distance(u_light_position[i], world_pos), 2.0));
 			//Difuse
 		
 			D = normalize(u_light_direction[i]);
@@ -242,7 +270,7 @@ void main()
 				light_intensity = u_intensity[i];
 			} 
 			else if(u_light_type[i] == 2){
-				L = normalize(u_light_position[i] - v_world_position);
+				L = normalize(u_light_position[i] - world_pos);
 				if(clamp(dot(L, D), 0.0, 1.0) >= clamp(cos(u_cone_infos[i].y), 0.0, 1.0)){
 					light_intensity *= (clamp(dot(L, D), 0.0, 1.0) - clamp(cos(u_cone_infos[i].y), 0.0, 1.0)) / (clamp(cos(u_cone_infos[i].x), 0.0, 1.0) - clamp(cos(u_cone_infos[i].y), 0.0, 1.0));
 				}
@@ -251,14 +279,14 @@ void main()
 				}
 			}
 			else {
-				L = normalize(u_light_position[i] - v_world_position);
+				L = normalize(u_light_position[i] - world_pos);
 			}
 			N_dot_L = clamp(dot(L,N), 0.0, 1.0);
 
 			// Apply shadow factor before adding light contribution
 			float shadow_factor = 1.0;
 			if(u_cast_shadows[i] == 1){
-				vec4 proj_pos = u_light_viewprojection[i] * vec4(v_world_position, 1.0);
+				vec4 proj_pos = u_light_viewprojection[i] * vec4(world_pos, 1.0);
 				proj_pos /= proj_pos.w;
 				proj_pos = (proj_pos + 1.0) * 0.5;
 				if (proj_pos.x >= 0.0 && proj_pos.x <= 1.0 && proj_pos.y >= 0.0 && proj_pos.y <= 1.0) {
@@ -274,7 +302,7 @@ void main()
 
 			//Specular
 			R = normalize(reflect(-L, N));
-			V = normalize(u_camera_pos - v_world_position);
+			V = normalize(u_camera_pos - world_pos);
 			R_dot_V = clamp(dot(R,V), 0.0, 1.0);
 			out_color += u_light_color[i] * color.rgb * pow(R_dot_V, u_shininess) * light_intensity * shadow_factor;
 		}
