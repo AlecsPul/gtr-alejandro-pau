@@ -25,6 +25,7 @@ GFX::Mesh sphere;
 std::vector<GFX::FBO*> shadow_fbos;
 float shadow_bias;
 bool forward_culling = false;
+bool directional_lights_only = false;
 
 static vec3 getLightForward(Matrix44 light_model)
 {
@@ -81,6 +82,7 @@ Renderer::Renderer(const char* shader_atlas_filename)
 {
 	render_wireframe = false;
 	render_boundaries = false;
+	multi_pass = true;
 	scene = nullptr;
 	skybox_cubemap = nullptr;
 	if (!GFX::Shader::LoadAtlas(shader_atlas_filename))
@@ -292,45 +294,60 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 	if (skybox_cubemap)
 		renderSkybox(skybox_cubemap);
 
-	// Render opaque objects - reuse geometry_fbo, only recreate if size changed
-	if (!gbuffer_fbo|| gbuffer_fbo->width  != (int)window_size.x|| gbuffer_fbo->height != (int)window_size.y)
+	if (multi_pass)
 	{
-		delete gbuffer_fbo;
-		gbuffer_fbo = new GFX::FBO();
-		gbuffer_fbo->create(window_size.x, window_size.y, 2, GL_RGBA, GL_UNSIGNED_BYTE, true);
+		// Deferred path for opaque geometry.
+		if (!gbuffer_fbo|| gbuffer_fbo->width  != (int)window_size.x|| gbuffer_fbo->height != (int)window_size.y)
+		{
+			delete gbuffer_fbo;
+			gbuffer_fbo = new GFX::FBO();
+			gbuffer_fbo->create(window_size.x, window_size.y, 2, GL_RGBA, GL_UNSIGNED_BYTE, true);
+		}
+
+
+		if (!lighting_fbo || lighting_fbo->width != (int)window_size.x || lighting_fbo->height != (int)window_size.y) {
+			lighting_fbo = new GFX::FBO();
+			lighting_fbo->create(window_size.x, window_size.y, 2, GL_RGBA, GL_UNSIGNED_BYTE, true);
+		}
+
+		gbuffer_fbo->bind();
+		glEnable(GL_DEPTH_TEST);
+		glDepthMask(true);
+		glDisable(GL_BLEND);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		for (auto& p : opaque_pairs) {
+			BoundingBox mesh_box = transformBoundingBox(p.second.model, p.second.mesh->box);
+			if (camera->testBoxInFrustum(mesh_box.center, mesh_box.halfsize)) {
+				renderOnlyMesh(p.second.model, p.second.mesh, p.second.material);
+			}
+		}
+		gbuffer_fbo->unbind();
+
+		gbuffer_fbo->depth_texture->copyTo(lighting_fbo->depth_texture);
+
+		lighting_fbo->bind();
+		glDisable(GL_BLEND);
+		glClear(GL_COLOR_BUFFER_BIT);
+		renderLightingPass(shadow_fbos);
+		lighting_fbo->unbind();
+		lighting_fbo->color_textures[0]->toViewport();
+	
+		if (gbuffer_fbo->depth_texture)
+			gbuffer_fbo->depth_texture->copyTo(nullptr);
 	}
-
-
-	if (!lighting_fbo || lighting_fbo->width != (int)window_size.x || lighting_fbo->height != (int)window_size.y) {
-		lighting_fbo = new GFX::FBO();
-		lighting_fbo->create(window_size.x, window_size.y, 2, GL_RGBA, GL_UNSIGNED_BYTE, true);
-	}
-
-	gbuffer_fbo->bind();
-	glEnable(GL_DEPTH_TEST);
-	glDepthMask(true);
-	glDisable(GL_BLEND);
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	for (auto& p : opaque_pairs) {
-		BoundingBox mesh_box = transformBoundingBox(p.second.model, p.second.mesh->box);
-		if (camera->testBoxInFrustum(mesh_box.center, mesh_box.halfsize)) {
-			renderOnlyMesh(p.second.model, p.second.mesh, p.second.material);
+	else
+	{
+		// Forward path renders opaques directly to the viewport.
+		glEnable(GL_DEPTH_TEST);
+		glDepthMask(true);
+		glDisable(GL_BLEND);
+		for (auto& p : opaque_pairs) {
+			BoundingBox mesh_box = transformBoundingBox(p.second.model, p.second.mesh->box);
+			if (camera->testBoxInFrustum(mesh_box.center, mesh_box.halfsize)) {
+				renderMeshWithMaterial(p.second.model, p.second.mesh, p.second.material, shadow_fbos);
+			}
 		}
 	}
-	gbuffer_fbo->unbind();
-
-	gbuffer_fbo->depth_texture->copyTo(lighting_fbo->depth_texture);
-
-	lighting_fbo->bind();
-	glDisable(GL_BLEND);
-	glClear(GL_COLOR_BUFFER_BIT);
-	renderLightingPass(shadow_fbos);
-	lighting_fbo->unbind();
-	lighting_fbo->color_textures[0]->toViewport();
-	
-	
-	if (gbuffer_fbo->depth_texture)
-		gbuffer_fbo->depth_texture->copyTo(nullptr);
 	
 
 	
@@ -369,7 +386,9 @@ void Renderer::renderLightingPass(const std::vector<GFX::FBO*>& shadow_fbos)
 	shader->setUniform("u_shadow_bias", shadow_bias);
 	shader->setUniform("u_shininess", 8.0f);
 
+	directional_lights_only = true;
 	sendLightUniforms(shader, false);
+	directional_lights_only = false;
 
 	int texture_slots = 1;
 	shader->setTexture("u_gbuffer_color", gbuffer_fbo->color_textures[0], texture_slots++);
@@ -668,7 +687,7 @@ void Renderer::sendLightUniforms(GFX::Shader *shader, bool is_volume) {
 		light_models.push_back(light_model);
 		light_colors.push_back(p->color);
 		light_positions.push_back(light_model.getTranslation());
-       light_intensities.push_back(!is_volume && p->light_type != DIRECTIONAL ? 0.0f : p->intensity);
+		light_intensities.push_back(directional_lights_only && p->light_type != DIRECTIONAL ? 0.0f : p->intensity);
 		light_types.push_back(p->light_type);
 		light_directions.push_back(getLightForward(light_model));
 		cone_infos.push_back(vec2(p->cone_info.x * DEG2RAD, p->cone_info.y * DEG2RAD));
@@ -698,7 +717,7 @@ void Renderer::showUI()
 	//add here your stuff
 	//...
 	//EDITOR.cpp LINE 323 -> SliderFloat for shininess
-	ImGui::Checkbox("Multi pass", &multi_pass);
+	ImGui::Checkbox("Use Deferred Pipeline", &multi_pass);
 	ImGui::SliderFloat("Shadow_bias", &shadow_bias,0.00001f, 0.1f);
 	ImGui::Checkbox("Forward Face Culling", &forward_culling);
 }
