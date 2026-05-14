@@ -305,6 +305,7 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 		lighting_fbo = new GFX::FBO();
 		lighting_fbo->create(window_size.x, window_size.y, 2, GL_RGBA, GL_UNSIGNED_BYTE, true);
 	}
+
 	gbuffer_fbo->bind();
 	glEnable(GL_DEPTH_TEST);
 	glDepthMask(true);
@@ -322,11 +323,12 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 
 	lighting_fbo->bind();
 	glDisable(GL_BLEND);
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	glClear(GL_COLOR_BUFFER_BIT);
 	renderLightingPass(shadow_fbos);
 	lighting_fbo->unbind();
 	lighting_fbo->color_textures[0]->toViewport();
-
+	
+	
 	if (gbuffer_fbo->depth_texture)
 		gbuffer_fbo->depth_texture->copyTo(nullptr);
 	
@@ -404,7 +406,7 @@ void Renderer::renderLightingPass(const std::vector<GFX::FBO*>& shadow_fbos)
 		glEnable(GL_BLEND);
 		glBlendFunc(GL_ONE, GL_ONE);
 		glFrontFace(GL_CW);
-
+	
 		sendLightUniforms(volume_shader, true);
 
 		glFrontFace(GL_CCW);
@@ -590,7 +592,7 @@ void Renderer::sendLightUniforms(GFX::Shader *shader, bool is_volume) {
 	if (is_volume)
 	{
 		Camera* camera = Camera::current;
-		shader->setUniform("u_Ia", vec3(0.0f, 0.0f, 0.0f));
+		shader->setUniform("u_Ia", scene->ambient_light);
 
 		int light_index = 0;
 		for (auto& p : lights_list) {
