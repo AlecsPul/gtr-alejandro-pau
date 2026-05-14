@@ -165,6 +165,8 @@ void main()
 	vec2 uv = v_uv;
 	vec4 color = u_color;
 	vec3 N;
+
+	
 	if(u_has_normal_map == 1){
 	vec3 texture_normal = texture(u_normal_map, uv).xyz;
 	
@@ -240,6 +242,8 @@ void main()
 {
 	vec2 uv = v_uv;
 	vec4 color = u_color * texture( u_texture, uv );
+	if(color.a <0.9 && floor(mod(gl_FragCoord.x, 2.0)) != floor(mod(gl_FragCoord.y, 2.0)))
+		discard;
 	if(color.a < u_alpha_cutoff)
 		discard;
 	
