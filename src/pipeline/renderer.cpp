@@ -301,7 +301,7 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 	}
 
 
-	if (!lighting_fbo) {
+	if (!lighting_fbo || lighting_fbo->width != (int)window_size.x || lighting_fbo->height != (int)window_size.y) {
 		lighting_fbo = new GFX::FBO();
 		lighting_fbo->create(window_size.x, window_size.y, 2, GL_RGBA, GL_UNSIGNED_BYTE, true);
 	}
