@@ -11,6 +11,37 @@ lighting basic.vs deferred_lighting.fs
 deferred_lighting quad.vs deferred_lighting.fs
 forward_transparent basic.vs forward_transparent.fs
 
+\PBR_functions
+#define PI 3.14159265359
+vec3 fresnel(vec3 V, vec3 H, vec3 F0){
+	float HdotV = clamp(dot(H, V), 0.0, 1.0);
+	float correction = 0;
+	if(HdotV <= 0.0)
+		correction = 0.0001;
+	return F0 + (1.0 - F0) * pow(1.0 - HdotV + correction, 5.0);
+}
+
+float D_GGX(vec3 H, vec3 N, float roughness)
+{
+	float alpha = roughness * roughness;
+	float NdotH = clamp(dot(N, H), 0.0, 1.0);
+	float correction = 0;
+	if (NdotH <= 0.0)
+		correction = 0.0001;
+	return pow(alpha, 2.0)/(PI * pow((pow(NdotH, 2.0) + correction) * (pow(alpha, 2.0) - 1.0) + 1.0 , 2.0));
+}
+
+float G_Schlick_Smith(vec3 V, vec3 N, float roughness)
+{
+	float alpha = roughness * roughness;
+	float k = alpha / 2.0;
+	float NdotV = clamp(dot(N, V), 0.0, 1.0);
+	float correction = 0;
+	if (NdotV <= 0.0)
+		correction = 0.0001;
+	return NdotV / ((NdotV + correction) * (1.0 - k) + k);
+}
+
 \perturbNormal
 
 // From https://github.com/glslify/glsl-perturb-normal/blob/master/cotangent-frame.glsl
@@ -155,10 +186,15 @@ uniform vec4 u_color;
 uniform sampler2D u_texture;
 uniform float u_alpha_cutoff;
 uniform int u_has_normal_map;
+uniform sampler2D u_metallic_roughness;
+uniform float u_roughness_factor;
+uniform float u_metallic_factor;
 
 out vec4 FragColor;
 layout(location = 0) out vec4 gbuffer_albedo;
 layout(location = 1) out vec4 gbuffer_normal_mat;
+layout(location = 2) out vec4 gbuffer_metallic_roughness;
+
 
 void main()
 {
@@ -181,10 +217,13 @@ void main()
 	
 	if(color.a < u_alpha_cutoff)
 		discard;
-	
+	vec4 mr_sample = texture(u_metallic_roughness, uv);
+	float metallic = clamp(mr_sample.b * u_metallic_factor, 0.0, 1.0);
+	float roughness = clamp(mr_sample.g * u_roughness_factor, 0.04, 1.0);
+
 	gbuffer_albedo = color;
-	gbuffer_normal_mat = vec4(N.x * 0.5 + 0.5, N.y * 0.5 + 0.5, N.z * 0.5 + 0.5, color.a);
-	
+	gbuffer_normal_mat = vec4(N.x * 0.5 + 0.5, N.y * 0.5 + 0.5, N.z * 0.5 + 0.5, 0.0);
+	gbuffer_metallic_roughness = vec4(metallic, roughness, 0.0, color.a);
 }
 
 
@@ -192,6 +231,8 @@ void main()
 
 #version 330 core
 #include "perturbNormal"
+#include "PBR_functions"
+#define PI 3.14159265359
 const int MAX_LIGHTS = 8;
 in vec3 v_world_position;
 in vec3 v_normal;
@@ -199,6 +240,10 @@ in vec2 v_uv;
 
 uniform vec3 u_light_position[MAX_LIGHTS];
 uniform vec3 u_Ia;
+
+uniform float u_roughness_factor;
+uniform float u_metallic_factor;
+uniform sampler2D u_metallic_roughness;
 
 uniform float u_shininess;
 uniform vec3 u_camera_pos;
@@ -240,6 +285,7 @@ float computeShadowFactor(int light_index, vec3 world_pos)
 
 void main()
 {
+	vec3 world_pos = v_world_position;
 	vec2 uv = v_uv;
 	vec4 color = u_color * texture( u_texture, uv );
 	if(color.a <0.9 && floor(mod(gl_FragCoord.x, 2.0)) != floor(mod(gl_FragCoord.y, 2.0)))
@@ -254,10 +300,15 @@ void main()
 		N = perturbNormal(normalize(v_normal), v_world_position, uv, normalize(texture_normal));
 	}
 
+	vec4 metallic_roughness = texture(u_metallic_roughness, uv);
+	float metallic = clamp(metallic_roughness.b * u_metallic_factor, 0.0, 1.0);
+	float roughness = clamp(metallic_roughness.g * u_roughness_factor, 0.04, 1.0);
+
 	vec3 out_color = u_Ia * color.rgb;
 	vec3 V = normalize(u_camera_pos - v_world_position);
 	vec3 L;
 	vec3 R;
+	vec3 H;
 	float light_intensity;
 	float R_dot_V;
 	vec3 light_forward;
@@ -293,13 +344,20 @@ void main()
 		if (N_dot_L <= 0.0 || light_intensity <= 0.0)
 			continue;
 
-		float shadow_factor = computeShadowFactor(i, v_world_position);
-		out_color += u_light_color[i] * color.rgb * N_dot_L * light_intensity * shadow_factor;
-
-		R = normalize(reflect(-L, N));
-		R_dot_V = clamp(dot(R, V), 0.0, 1.0);
-		out_color += u_light_color[i] * color.rgb * pow(R_dot_V, u_shininess) * light_intensity * shadow_factor;
-	}
+		H = normalize(L + V);
+		vec3 F0 = mix(vec3(0.04), color.rgb, metallic);
+		vec3 F = fresnel(V, H, F0);
+		float D = D_GGX(H, N, roughness);
+		float G1 = G_Schlick_Smith(V, N, roughness);
+		float G2 = G_Schlick_Smith(L, N, roughness);
+		float G = G1 * G2;
+		vec3 diffuse = (1.0-metallic) * color.rgb / PI;
+		float N_dot_V = clamp(dot(N, V), 0.0, 1.0);
+		
+		vec3 specular = (F * D * G) / (4 * N_dot_V * N_dot_L + 0.0001);
+		
+		out_color += (diffuse + specular) * light_intensity * u_light_color[i] * N_dot_L * computeShadowFactor(i, world_pos);
+		}
 
 	FragColor = vec4(out_color, color.a);
 }
@@ -307,9 +365,12 @@ void main()
 \deferred_lighting.fs
 
 #version 330 core
+#include "PBR_functions"
+#define PI 3.14159265359
 const int MAX_LIGHTS = 8;
 
 in vec2 v_uv;
+
 
 uniform vec3 u_light_position[MAX_LIGHTS];
 uniform vec3 u_Ia;
@@ -330,6 +391,7 @@ uniform float u_shadow_bias;
 uniform sampler2D u_gbuffer_depth;
 uniform sampler2D u_gbuffer_normal;
 uniform sampler2D u_gbuffer_color;
+uniform sampler2D u_gbuffer_metallic_roughness;
 uniform mat4 u_inv_vp_mat;
 uniform vec2 u_res_inv;
 
@@ -355,7 +417,17 @@ void main()
 {
 	vec2 uv = gl_FragCoord.xy * u_res_inv;
 	float depth = texture(u_gbuffer_depth, uv).r;
-	if(depth == 1.0)
+	vec4 color = texture(u_gbuffer_color, uv);
+	vec4 normal_mat = texture(u_gbuffer_normal, uv);
+
+    if(normal_mat.a > 0.5)
+    {
+        FragColor = vec4(color.rgb, 1.0);
+        return;
+    }
+
+	
+	if(depth >= 1.0)
 		discard;
 
 	float depth_clip = depth * 2.0 - 1.0;
@@ -364,10 +436,15 @@ void main()
 	vec4 not_norm_world_pos = u_inv_vp_mat * clip_coords;
 	vec3 world_pos = not_norm_world_pos.xyz / not_norm_world_pos.w;
 
-	vec4 color = texture(u_gbuffer_color, uv);
 	vec3 N = normalize(texture(u_gbuffer_normal, uv).xyz * 2.0 - 1.0);
 	vec3 out_color = u_Ia * color.rgb;
 	vec3 V = normalize(u_camera_pos - world_pos);
+
+	vec4 metallic_roughness = texture(u_gbuffer_metallic_roughness, uv);
+	float metallic = clamp(metallic_roughness.r, 0.0, 1.0);
+	float roughness = clamp(metallic_roughness.g, 0.04, 1.0);
+	
+	vec3 H;
 	vec3 L;
 	vec3 R;
 	vec3 light_forward;
@@ -400,18 +477,25 @@ void main()
 				}
 			}
 		}
-
 		N_dot_L = clamp(dot(L, N), 0.0, 1.0);
 		if (N_dot_L <= 0.0 || light_intensity <= 0.0)
 			continue;
 
-		float shadow_factor = computeShadowFactor(i, world_pos);
-		out_color += u_light_color[i] * color.rgb * N_dot_L * light_intensity * shadow_factor;
-
-		R = normalize(reflect(-L, N));
-		R_dot_V = clamp(dot(R, V), 0.0, 1.0);
-		out_color += u_light_color[i] * color.rgb * pow(R_dot_V, u_shininess) * light_intensity * shadow_factor;
-	}
+		H = normalize(L + V);
+		vec3 F0 = mix(vec3(0.04), color.rgb, metallic);
+		vec3 F = fresnel(V, H, F0);
+		float D = D_GGX(H, N, roughness);
+		float G1 = G_Schlick_Smith(V, N, roughness);
+		float G2 = G_Schlick_Smith(L, N, roughness);
+		float G = G1 * G2;
+		vec3 diffuse = (1.0-metallic) * color.rgb / PI;
+		float N_dot_V = clamp(dot(N, V), 0.0, 1.0);
+		
+		vec3 specular = (F * D * G) / (4 * N_dot_V * N_dot_L + 0.0001);
+		
+		out_color += (diffuse + specular) * light_intensity * u_light_color[i]* N_dot_L * computeShadowFactor(i, world_pos);
+		
+		}
 
 	FragColor = vec4(out_color, color.a);
 }
@@ -434,7 +518,7 @@ void main()
 {
    	vec3 N = normalize(v_normal);
     gbuffer_albedo = vec4(v_color.rgb, v_color.a);
-	gbuffer_normal_mat = vec4(N.x * 0.5 + 0.5, N.y * 0.5 + 0.5, N.z * 0.5 + 0.5, v_color.a);
+	gbuffer_normal_mat = vec4(N.x * 0.5 + 0.5, N.y * 0.5 + 0.5, N.z * 0.5 + 0.5, 0.0);
 	
     
 }
@@ -455,13 +539,13 @@ layout(location = 0) out vec4 gbuffer_albedo;
 layout(location = 1) out vec4 gbuffer_normal_mat;
 
 void main()
-{
+{	
 	vec3 E = v_world_position - u_camera_position;
 	vec4 color = texture( u_texture, E );
 	vec3 N = normalize(v_normal);
 	FragColor = color;
 	gbuffer_albedo = vec4(color.rgb, 1.0);
-	gbuffer_normal_mat = vec4(N.x * 0.5 + 0.5, N.y * 0.5 + 0.5, N.z * 0.5 + 0.5, 1.0);
+	gbuffer_normal_mat = vec4(0.0,0.0,0.0, 1.0);
 
 	
 }

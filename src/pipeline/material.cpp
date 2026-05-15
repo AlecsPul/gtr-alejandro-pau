@@ -82,6 +82,7 @@ void Material::bind(GFX::Shader* shader) {
 	{
 		GFX::Texture* texture = textures[SCN::eTextureChannel::ALBEDO].texture;
 		GFX::Texture* normal_map = textures[SCN::eTextureChannel::NORMALMAP].texture;
+		GFX::Texture* metallic_roughness = textures[SCN::eTextureChannel::METALLIC_ROUGHNESS].texture;
 		// HERE =====================
 		// TODO: Expand rfor the rest of materials (when you need to)
 		//	texture = emissive_texture;
@@ -95,10 +96,15 @@ void Material::bind(GFX::Shader* shader) {
 
 		if (texture == NULL)
 			texture = GFX::Texture::getWhiteTexture(); //a 1x1 white texture
-		
+		if(metallic_roughness == NULL)
+			metallic_roughness = GFX::Texture::getWhiteTexture();
 		shader->setUniform("u_color", color);
 		shader->setUniform("u_shininess", shininess);
 		shader->setUniform("u_has_normal_map", normal_map ? 1 : 0);
+		shader->setUniform("u_roughness_factor", roughness_factor);
+
+		shader->setUniform("u_metallic_factor", metallic_factor);
+		shader->setUniform("u_metallic_roughness", metallic_roughness, 2);
 
 		if (texture)
 			shader->setUniform("u_texture", texture, 0);

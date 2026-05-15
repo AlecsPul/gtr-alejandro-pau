@@ -291,7 +291,7 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 	GFX::checkGLErrors();
 
 	//render skybox
-	if (skybox_cubemap)
+	if (skybox_cubemap && !multi_pass)
 		renderSkybox(skybox_cubemap);
 
 	if (multi_pass)
@@ -301,13 +301,13 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 		{
 			delete gbuffer_fbo;
 			gbuffer_fbo = new GFX::FBO();
-			gbuffer_fbo->create(window_size.x, window_size.y, 2, GL_RGBA, GL_UNSIGNED_BYTE, true);
+			gbuffer_fbo->create(window_size.x, window_size.y, 3, GL_RGBA, GL_UNSIGNED_BYTE, true);
 		}
 
 
 		if (!lighting_fbo || lighting_fbo->width != (int)window_size.x || lighting_fbo->height != (int)window_size.y) {
 			lighting_fbo = new GFX::FBO();
-			lighting_fbo->create(window_size.x, window_size.y, 2, GL_RGBA, GL_UNSIGNED_BYTE, true);
+			lighting_fbo->create(window_size.x, window_size.y, 3, GL_RGBA, GL_UNSIGNED_BYTE, true);
 		}
 
 		gbuffer_fbo->bind();
@@ -315,6 +315,10 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 		glDepthMask(true);
 		glDisable(GL_BLEND);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+		if (skybox_cubemap)
+			renderSkybox(skybox_cubemap);
+		
 		for (auto& p : opaque_pairs) {
 			BoundingBox mesh_box = transformBoundingBox(p.second.model, p.second.mesh->box);
 			if (camera->testBoxInFrustum(mesh_box.center, mesh_box.halfsize)) {
@@ -390,11 +394,11 @@ void Renderer::renderLightingPass(const std::vector<GFX::FBO*>& shadow_fbos)
 	sendLightUniforms(shader, false);
 	directional_lights_only = false;
 
-	int texture_slots = 1;
+	int texture_slots = 2;
 	shader->setTexture("u_gbuffer_color", gbuffer_fbo->color_textures[0], texture_slots++);
 	shader->setTexture("u_gbuffer_normal", gbuffer_fbo->color_textures[1], texture_slots++);
 	shader->setTexture("u_gbuffer_depth", gbuffer_fbo->depth_texture, texture_slots++);
-
+	shader->setTexture("u_gbuffer_metallic_roughness", gbuffer_fbo->color_textures[2], texture_slots++);
 	bindShadowUniforms(shader, shadow_fbos, light_cams_viewproj, lights_list);
 
 	quad->render(GL_TRIANGLES);
@@ -414,10 +418,11 @@ void Renderer::renderLightingPass(const std::vector<GFX::FBO*>& shadow_fbos)
 		volume_shader->setUniform("u_shadow_bias", shadow_bias);
 		volume_shader->setUniform("u_shininess", 8.0f);
 
-		int volume_texture_slots = 1;
+		int volume_texture_slots = 2;
 		volume_shader->setTexture("u_gbuffer_color", gbuffer_fbo->color_textures[0], volume_texture_slots++);
 		volume_shader->setTexture("u_gbuffer_normal", gbuffer_fbo->color_textures[1], volume_texture_slots++);
 		volume_shader->setTexture("u_gbuffer_depth", gbuffer_fbo->depth_texture, volume_texture_slots++);
+		volume_shader->setTexture("u_gbuffer_metallic_roughness", gbuffer_fbo->color_textures[2], volume_texture_slots++);
 
 		glEnable(GL_DEPTH_TEST);
 		glDepthFunc(GL_GREATER);
@@ -611,7 +616,7 @@ void Renderer::sendLightUniforms(GFX::Shader *shader, bool is_volume) {
 	if (is_volume)
 	{
 		Camera* camera = Camera::current;
-		shader->setUniform("u_Ia", scene->ambient_light);
+		shader->setUniform("u_Ia", vec3(0.0f, 0.0f, 0.0f));
 
 		int light_index = 0;
 		for (auto& p : lights_list) {
