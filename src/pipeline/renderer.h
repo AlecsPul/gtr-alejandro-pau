@@ -29,6 +29,7 @@ namespace SCN {
 
 		GFX::Texture* skybox_cubemap;
 		SCN::Scene* scene;
+		std::vector<Vector3f> ssao_samples;
 
 		GFX::FBO* gbuffer_fbo = nullptr; // persistent GBuffer FBO, reused every frame
 		GFX::FBO* lighting_fbo = nullptr;
@@ -45,6 +46,7 @@ namespace SCN {
 		//...
 		void renderFBO(const Matrix44 model, GFX::Mesh* mesh, SCN::Material* material, Camera* light_cam);
 		void parseSceneEntities(SCN::Scene* scene, Camera* camera);
+		void renderSSAOPass();
 		void renderLightingPass(const std::vector<GFX::FBO*>& shadow_fbos);
 		//renders several elements of the scene
 		void renderScene(SCN::Scene* scene, Camera* camera);

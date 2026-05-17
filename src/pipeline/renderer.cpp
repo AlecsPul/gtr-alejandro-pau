@@ -85,6 +85,7 @@ Renderer::Renderer(const char* shader_atlas_filename)
 	multi_pass = true;
 	scene = nullptr;
 	skybox_cubemap = nullptr;
+	ssao_samples = generateSpherePoints(64, 1.0f, false);
 	if (!GFX::Shader::LoadAtlas(shader_atlas_filename))
 		exit(1);
 	GFX::checkGLErrors();
@@ -335,6 +336,8 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 		}
 		gbuffer_fbo->unbind();
 
+		renderSSAOPass();
+
 		gbuffer_fbo->depth_texture->copyTo(lighting_fbo->depth_texture);
 
 		lighting_fbo->bind();
@@ -447,6 +450,37 @@ void Renderer::renderLightingPass(const std::vector<GFX::FBO*>& shadow_fbos)
 		glDepthFunc(GL_LESS);
 		volume_shader->disable();
 	}
+
+	glEnable(GL_DEPTH_TEST);
+}
+
+void Renderer::renderSSAOPass()
+{
+	if (!ssao_fbo || !gbuffer_fbo || !gbuffer_fbo->depth_texture)
+		return;
+
+	GFX::Shader* ao_shader = GFX::Shader::Get("ssao");
+	if (!ao_shader)
+		return;
+
+	Camera* camera = Camera::current;
+	GFX::Mesh* quad = GFX::Mesh::getQuad();
+
+	ssao_fbo->bind();
+	glDisable(GL_DEPTH_TEST);
+	glDisable(GL_BLEND);
+	glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+	glClear(GL_COLOR_BUFFER_BIT);
+
+	ao_shader->enable();
+	ao_shader->setUniform("u_inv_vp_mat", camera->inverse_viewprojection_matrix);
+	ao_shader->setUniform("u_res_inv", vec2(1.0f / ssao_fbo->color_textures[0]->width, 1.0f / ssao_fbo->color_textures[0]->height));
+	ao_shader->setTexture("u_depth_tex", gbuffer_fbo->depth_texture, 7);
+
+	quad->render(GL_TRIANGLES);
+
+	ao_shader->disable();
+	ssao_fbo->unbind();
 
 	glEnable(GL_DEPTH_TEST);
 }

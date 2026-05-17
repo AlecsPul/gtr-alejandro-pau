@@ -10,6 +10,7 @@ material basic.vs material.fs
 lighting basic.vs deferred_lighting.fs
 deferred_lighting quad.vs deferred_lighting.fs
 forward_transparent basic.vs forward_transparent.fs
+ssao quad.vs ssao.fs
 
 \PBR_functions
 #define PI 3.14159265359
@@ -498,6 +499,38 @@ void main()
 		}
 
 	FragColor = vec4(out_color, color.a);
+}
+
+\ssao.fs
+
+#version 330 core
+
+in vec2 v_uv;
+
+uniform sampler2D u_depth_tex;
+uniform mat4 u_inv_vp_mat;
+uniform vec2 u_res_inv;
+
+out vec4 FragColor;
+
+void main()
+{
+	vec2 uv = gl_FragCoord.xy * u_res_inv;
+	float depth = texture(u_depth_tex, uv).r;
+
+	if(depth >= 1.0)
+	{
+		FragColor = vec4(1.0);
+		return;
+	}
+
+	float depth_clip = depth * 2.0 - 1.0;
+	vec2 uv_clip = uv * 2.0 - 1.0;
+	vec4 clip_coords = vec4(uv_clip.x, uv_clip.y, depth_clip, 1.0);
+	vec4 world_pos = u_inv_vp_mat * clip_coords;
+	world_pos.xyz /= world_pos.w;
+
+	FragColor = vec4(1.0);
 }
 
 \deferred.fs
