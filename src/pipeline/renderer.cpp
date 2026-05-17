@@ -306,8 +306,16 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 
 
 		if (!lighting_fbo || lighting_fbo->width != (int)window_size.x || lighting_fbo->height != (int)window_size.y) {
+			delete lighting_fbo;
 			lighting_fbo = new GFX::FBO();
 			lighting_fbo->create(window_size.x, window_size.y, 3, GL_RGBA, GL_UNSIGNED_BYTE, true);
+		}
+
+		if (!ssao_fbo || ssao_fbo->width != (int)window_size.x || ssao_fbo->height != (int)window_size.y)
+		{
+			delete ssao_fbo;
+			ssao_fbo = new GFX::FBO();
+			ssao_fbo->create(window_size.x, window_size.y, 1, GL_RGB, GL_UNSIGNED_BYTE, false);
 		}
 
 		gbuffer_fbo->bind();
