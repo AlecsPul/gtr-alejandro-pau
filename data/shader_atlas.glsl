@@ -508,7 +508,8 @@ void main()
 in vec2 v_uv;
 
 uniform sampler2D u_depth_tex;
-uniform mat4 u_inv_vp_mat;
+uniform mat4 u_p_mat;
+uniform mat4 u_inv_p_mat;
 uniform vec2 u_res_inv;
 uniform int u_sample_count;
 uniform float u_sample_radius;
@@ -530,8 +531,8 @@ void main()
 	float depth_clip = depth * 2.0 - 1.0;
 	vec2 uv_clip = uv * 2.0 - 1.0;
 	vec4 clip_coords = vec4(uv_clip.x, uv_clip.y, depth_clip, 1.0);
-	vec4 world_pos = u_inv_vp_mat * clip_coords;
-	world_pos.xyz /= world_pos.w;
+	vec4 view_pos = u_inv_p_mat * clip_coords;
+	view_pos.xyz /= view_pos.w;
 
 	FragColor = vec4(1.0);
 }

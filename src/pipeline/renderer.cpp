@@ -465,6 +465,9 @@ void Renderer::renderSSAOPass()
 
 	Camera* camera = Camera::current;
 	GFX::Mesh* quad = GFX::Mesh::getQuad();
+	Matrix44 proj = camera->projection_matrix;
+	Matrix44 proj_inv = proj;
+	proj_inv.inverse();
 
 	ssao_fbo->bind();
 	glDisable(GL_DEPTH_TEST);
@@ -473,7 +476,8 @@ void Renderer::renderSSAOPass()
 	glClear(GL_COLOR_BUFFER_BIT);
 
 	ao_shader->enable();
-	ao_shader->setUniform("u_inv_vp_mat", camera->inverse_viewprojection_matrix);
+	ao_shader->setUniform("u_p_mat", proj);
+	ao_shader->setUniform("u_inv_p_mat", proj_inv);
 	ao_shader->setUniform("u_res_inv", vec2(1.0f / ssao_fbo->color_textures[0]->width, 1.0f / ssao_fbo->color_textures[0]->height));
 	ao_shader->setUniform("u_sample_count", ssao_sample_count);
 	ao_shader->setUniform("u_sample_radius", ssao_radius);
