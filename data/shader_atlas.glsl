@@ -519,7 +519,7 @@ out vec4 FragColor;
 
 void main()
 {
-	vec2 uv = gl_FragCoord.xy * u_res_inv;
+	vec2 uv = v_uv + 0.5 * u_res_inv;
 	float depth = texture(u_depth_tex, uv).r;
 
 	if(depth >= 1.0)
@@ -528,13 +528,37 @@ void main()
 		return;
 	}
 
-	float depth_clip = depth * 2.0 - 1.0;
-	vec2 uv_clip = uv * 2.0 - 1.0;
-	vec4 clip_coords = vec4(uv_clip.x, uv_clip.y, depth_clip, 1.0);
-	vec4 view_pos = u_inv_p_mat * clip_coords;
-	view_pos.xyz /= view_pos.w;
+	vec4 clip_coords = vec4(uv, depth, 1.0);
+	clip_coords.xyz = clip_coords.xyz * 2.0 - 1.0;
 
-	FragColor = vec4(1.0);
+	vec4 view_sample_origin = u_inv_p_mat * clip_coords;
+	view_sample_origin /= view_sample_origin.w;
+
+	float ao_term = 0.0;
+	for (int i = 0; i < u_sample_count; ++i)
+	{
+		vec3 view_sample = u_sample_pos[i];
+		view_sample *= u_sample_radius;
+		view_sample += view_sample_origin.xyz;
+
+		vec4 proj_sample = u_p_mat * vec4(view_sample, 1.0);
+		proj_sample /= proj_sample.w;
+		proj_sample.xyz = proj_sample.xyz * 0.5 + 0.5;
+
+		vec2 sample_uv = proj_sample.xy;
+		if (sample_uv.x < 0.0 || sample_uv.x > 1.0 || sample_uv.y < 0.0 || sample_uv.y > 1.0)
+		{
+			ao_term += 1.0;
+			continue;
+		}
+
+		float sample_depth = texture(u_depth_tex, sample_uv).r;
+		if (sample_depth >= proj_sample.z)
+			ao_term += 1.0;
+	}
+
+	ao_term /= float(u_sample_count);
+	FragColor = vec4(vec3(ao_term), 1.0);
 }
 
 \deferred.fs
