@@ -85,7 +85,7 @@ Renderer::Renderer(const char* shader_atlas_filename)
 	multi_pass = true;
 	scene = nullptr;
 	skybox_cubemap = nullptr;
-	ssao_samples = generateSpherePoints(64, 1.0f, false);
+	ssao_samples = generateSpherePoints(64, 1.0f, true);
 	if (!GFX::Shader::LoadAtlas(shader_atlas_filename))
 		exit(1);
 	GFX::checkGLErrors();
@@ -410,6 +410,7 @@ void Renderer::renderLightingPass(const std::vector<GFX::FBO*>& shadow_fbos)
 	shader->setTexture("u_gbuffer_normal", gbuffer_fbo->color_textures[1], texture_slots++);
 	shader->setTexture("u_gbuffer_depth", gbuffer_fbo->depth_texture, texture_slots++);
 	shader->setTexture("u_gbuffer_metallic_roughness", gbuffer_fbo->color_textures[2], texture_slots++);
+	shader->setTexture("u_ssao_tex", ssao_fbo->color_textures[0], texture_slots++);
 	bindShadowUniforms(shader, shadow_fbos, light_cams_viewproj, lights_list);
 
 	quad->render(GL_TRIANGLES);
@@ -478,12 +479,14 @@ void Renderer::renderSSAOPass()
 	ao_shader->enable();
 	ao_shader->setUniform("u_p_mat", proj);
 	ao_shader->setUniform("u_inv_p_mat", proj_inv);
+	ao_shader->setUniform("u_view_mat", camera->view_matrix);
 	ao_shader->setUniform("u_res_inv", vec2(1.0f / ssao_fbo->color_textures[0]->width, 1.0f / ssao_fbo->color_textures[0]->height));
 	ao_shader->setUniform("u_sample_count", ssao_sample_count);
 	ao_shader->setUniform("u_sample_radius", ssao_radius);
 	if (!ssao_samples.empty())
 		ao_shader->setUniform3Array("u_sample_pos", (float*)&ssao_samples[0], ssao_sample_count);
 	ao_shader->setTexture("u_depth_tex", gbuffer_fbo->depth_texture, 7);
+	ao_shader->setTexture("u_normal_tex", gbuffer_fbo->color_textures[1], 8);
 
 	quad->render(GL_TRIANGLES);
 

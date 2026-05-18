@@ -393,6 +393,7 @@ uniform sampler2D u_gbuffer_depth;
 uniform sampler2D u_gbuffer_normal;
 uniform sampler2D u_gbuffer_color;
 uniform sampler2D u_gbuffer_metallic_roughness;
+uniform sampler2D u_ssao_tex;
 uniform mat4 u_inv_vp_mat;
 uniform vec2 u_res_inv;
 
@@ -431,6 +432,7 @@ void main()
 	if(depth >= 1.0)
 		discard;
 
+	float ao = texture(u_ssao_tex, uv).r;
 	float depth_clip = depth * 2.0 - 1.0;
 	vec2 uv_clip = uv * 2.0 - 1.0;
 	vec4 clip_coords = vec4(uv_clip.x, uv_clip.y, depth_clip, 1.0);
@@ -438,7 +440,7 @@ void main()
 	vec3 world_pos = not_norm_world_pos.xyz / not_norm_world_pos.w;
 
 	vec3 N = normalize(texture(u_gbuffer_normal, uv).xyz * 2.0 - 1.0);
-	vec3 out_color = u_Ia * color.rgb;
+	vec3 out_color = u_Ia * color.rgb * ao;
 	vec3 V = normalize(u_camera_pos - world_pos);
 
 	vec4 metallic_roughness = texture(u_gbuffer_metallic_roughness, uv);
@@ -508,8 +510,10 @@ void main()
 in vec2 v_uv;
 
 uniform sampler2D u_depth_tex;
+uniform sampler2D u_normal_tex;
 uniform mat4 u_p_mat;
 uniform mat4 u_inv_p_mat;
+uniform mat4 u_view_mat;
 uniform vec2 u_res_inv;
 uniform int u_sample_count;
 uniform float u_sample_radius;
@@ -533,11 +537,18 @@ void main()
 
 	vec4 view_sample_origin = u_inv_p_mat * clip_coords;
 	view_sample_origin /= view_sample_origin.w;
+	vec3 N = normalize(texture(u_normal_tex, uv).xyz * 2.0 - 1.0);
+	N = normalize((u_view_mat * vec4(N, 0.0)).xyz);
+
+	vec3 v = vec3(0.0, 1.0, 0.0);
+	vec3 T = normalize(v - N * dot(v, N));
+	vec3 B = cross(N, T);
+	mat3 rotmat = mat3(T, B, N);
 
 	float ao_term = 0.0;
 	for (int i = 0; i < u_sample_count; ++i)
 	{
-		vec3 view_sample = u_sample_pos[i];
+		vec3 view_sample = rotmat * u_sample_pos[i];
 		view_sample *= u_sample_radius;
 		view_sample += view_sample_origin.xyz;
 
