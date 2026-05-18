@@ -189,6 +189,7 @@ void main()
 
 #version 330 core
 #include "perturbNormal"
+#include "gamma_functions"
 in vec2 v_uv;
 in vec3 v_normal;
 in vec3 v_world_position;
@@ -212,6 +213,7 @@ void main()
 {
 	vec2 uv = v_uv;
 	vec4 color = u_color;
+	color.xyz = degamma(color.xyz);
 	vec3 N;
 
 	
@@ -244,6 +246,7 @@ void main()
 #version 330 core
 #include "perturbNormal"
 #include "PBR_functions"
+#include "gamma_functions"
 #define PI 3.14159265359
 const int MAX_LIGHTS = 8;
 in vec3 v_world_position;
@@ -300,6 +303,7 @@ void main()
 	vec3 world_pos = v_world_position;
 	vec2 uv = v_uv;
 	vec4 color = u_color * texture( u_texture, uv );
+	color.xyz = degamma(color.xyz);
 	if(color.a <0.9 && floor(mod(gl_FragCoord.x, 2.0)) != floor(mod(gl_FragCoord.y, 2.0)))
 		discard;
 	if(color.a < u_alpha_cutoff)
@@ -316,7 +320,8 @@ void main()
 	float metallic = clamp(metallic_roughness.b * u_metallic_factor, 0.0, 1.0);
 	float roughness = clamp(metallic_roughness.g * u_roughness_factor, 0.04, 1.0);
 
-	vec3 out_color = u_Ia * color.rgb;
+	vec3 ambient_light = degamma(u_Ia);
+	vec3 out_color = ambient_light * color.rgb;
 	vec3 V = normalize(u_camera_pos - v_world_position);
 	vec3 L;
 	vec3 R;
@@ -365,12 +370,13 @@ void main()
 		float G = G1 * G2;
 		vec3 diffuse = (1.0-metallic) * color.rgb / PI;
 		float N_dot_V = clamp(dot(N, V), 0.0, 1.0);
-		
-		vec3 specular = (F * D * G) / (4 * N_dot_V * N_dot_L + 0.0001);
-		
-		out_color += (diffuse + specular) * light_intensity * u_light_color[i] * N_dot_L * computeShadowFactor(i, world_pos);
-		}
 
+		vec3 specular = (F * D * G) / (4 * N_dot_V * N_dot_L + 0.0001);
+		vec3 light_color = degamma(u_light_color[i]);
+		
+		out_color += (diffuse + specular) * light_intensity * light_color * N_dot_L * computeShadowFactor(i, world_pos);
+		}
+	out_color = gamma(out_color);
 	FragColor = vec4(out_color, color.a);
 }
 
@@ -378,6 +384,7 @@ void main()
 
 #version 330 core
 #include "PBR_functions"
+#include "gamma_functions"
 #define PI 3.14159265359
 const int MAX_LIGHTS = 8;
 
@@ -435,7 +442,8 @@ void main()
 
     if(normal_mat.a > 0.5)
     {
-        FragColor = vec4(color.rgb, 1.0);
+        color.xyz = gamma(color.xyz);
+		FragColor = vec4(color.xyz, 1.0);
         return;
     }
 
@@ -451,7 +459,8 @@ void main()
 	vec3 world_pos = not_norm_world_pos.xyz / not_norm_world_pos.w;
 
 	vec3 N = normalize(texture(u_gbuffer_normal, uv).xyz * 2.0 - 1.0);
-	vec3 out_color = u_Ia * color.rgb * ao;
+	vec3 ambient_light = degamma(u_Ia);
+	vec3 out_color = ambient_light * color.rgb * ao;
 	vec3 V = normalize(u_camera_pos - world_pos);
 
 	vec4 metallic_roughness = texture(u_gbuffer_metallic_roughness, uv);
@@ -504,13 +513,14 @@ void main()
 		float G = G1 * G2;
 		vec3 diffuse = (1.0-metallic) * color.rgb / PI;
 		float N_dot_V = clamp(dot(N, V), 0.0, 1.0);
-		
+
 		vec3 specular = (F * D * G) / (4 * N_dot_V * N_dot_L + 0.0001);
+		vec3 light_color = degamma(u_light_color[i]);
 		
-		out_color += (diffuse + specular) * light_intensity * u_light_color[i]* N_dot_L * computeShadowFactor(i, world_pos);
+		out_color += (diffuse + specular) * light_intensity * light_color * N_dot_L * computeShadowFactor(i, world_pos);
 		
 		}
-
+	out_color = gamma(out_color);
 	FragColor = vec4(out_color, color.a);
 }
 
