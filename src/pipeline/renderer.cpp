@@ -112,6 +112,31 @@ struct sRenderable
 std::vector<sRenderable> render_list;
 std::vector<LightEntity*> lights_list;
 
+static void setTonemapUniforms(GFX::Shader* shader)
+{
+	float total_intensity = 0.0f;
+	float max_intensity = 0.0f;
+	for (auto* light : lights_list)
+	{
+		total_intensity += light->intensity;
+		if (light->intensity > max_intensity)
+			max_intensity = light->intensity;
+	}
+
+	const float gamma = 2.2f;
+
+	float average_lum = total_intensity / (float)lights_list.size();
+	
+	float lumwhite2 = max_intensity * max_intensity;
+
+	const float tonemap_scale = 1.0f;
+
+	shader->setUniform("u_scale", tonemap_scale);
+	shader->setUniform("u_average_lum", average_lum);
+	shader->setUniform("u_lumwhite2", lumwhite2);
+	shader->setUniform("u_igamma", 1.0f / gamma);
+}
+
 void parseNode(Node* node){
 	if (!node) {
 		return;
@@ -309,7 +334,7 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 		if (!lighting_fbo || lighting_fbo->width != (int)window_size.x || lighting_fbo->height != (int)window_size.y) {
 			delete lighting_fbo;
 			lighting_fbo = new GFX::FBO();
-			lighting_fbo->create(window_size.x, window_size.y, 3, GL_RGBA, GL_UNSIGNED_BYTE, true);
+			lighting_fbo->create(window_size.x, window_size.y, 3, GL_RGBA, GL_FLOAT, true);
 		}
 
 		if (!ssao_fbo || ssao_fbo->width != (int)window_size.x || ssao_fbo->height != (int)window_size.y)
@@ -345,7 +370,16 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 		glClear(GL_COLOR_BUFFER_BIT);
 		renderLightingPass(shadow_fbos);
 		lighting_fbo->unbind();
-		lighting_fbo->color_textures[0]->toViewport();
+		GFX::Shader* tonemap_shader = GFX::Shader::Get("tonemap");
+		if (tonemap_shader)
+		{
+			tonemap_shader->enable();
+			setTonemapUniforms(tonemap_shader);
+			lighting_fbo->color_textures[0]->toViewport(tonemap_shader);
+			tonemap_shader->disable();
+		}
+		else
+			lighting_fbo->color_textures[0]->toViewport();
 	
 		if (gbuffer_fbo->depth_texture)
 			gbuffer_fbo->depth_texture->copyTo(nullptr);
@@ -670,7 +704,6 @@ void Renderer::sendLightUniforms(GFX::Shader *shader, bool is_volume) {
 	{
 		Camera* camera = Camera::current;
 		shader->setUniform("u_Ia", vec3(0.0f, 0.0f, 0.0f));
-
 		int light_index = 0;
 		for (auto& p : lights_list) {
 			Matrix44 light_model = p->root.getGlobalMatrix();
@@ -738,7 +771,7 @@ void Renderer::sendLightUniforms(GFX::Shader *shader, bool is_volume) {
 	std::vector<int> light_types;
 	std::vector<Vector3f> light_directions;
 	std::vector<Vector2f> cone_infos;
-	std::vector<Matrix44> light_models;
+		std::vector<Matrix44> light_models;
 
 	for (auto& p : lights_list) {
 		Matrix44 light_model = p->root.getGlobalMatrix();

@@ -11,6 +11,7 @@ lighting basic.vs deferred_lighting.fs
 deferred_lighting quad.vs deferred_lighting.fs
 forward_transparent basic.vs forward_transparent.fs
 ssao quad.vs ssao.fs
+tonemap quad.vs tonemap.fs
 
 \gamma_functions
 vec3 degamma(vec3 color)
@@ -442,7 +443,6 @@ void main()
 
     if(normal_mat.a > 0.5)
     {
-        color.xyz = gamma(color.xyz);
 		FragColor = vec4(color.xyz, 1.0);
         return;
     }
@@ -520,7 +520,6 @@ void main()
 		out_color += (diffuse + specular) * light_intensity * light_color * N_dot_L * computeShadowFactor(i, world_pos);
 		
 		}
-	out_color = gamma(out_color);
 	FragColor = vec4(out_color, color.a);
 }
 
@@ -591,6 +590,39 @@ void main()
 
 	ao_term /= float(u_sample_count);
 	FragColor = vec4(vec3(ao_term), 1.0);
+}
+
+\tonemap.fs
+
+#version 330 core
+
+in vec2 v_uv;
+
+uniform sampler2D u_texture;
+uniform float u_scale;
+uniform float u_average_lum;
+uniform float u_lumwhite2;
+uniform float u_igamma;
+
+out vec4 FragColor;
+
+void main()
+{
+	vec4 color = texture(u_texture, v_uv);
+	vec3 rgb = color.xyz;
+
+	float lum = max(dot(rgb, vec3(0.2126, 0.7152, 0.0722)), 0.0001);
+	float average_lum = max(u_average_lum, 0.0001);
+	float lumwhite2 = max(u_lumwhite2, 0.0001);
+
+	float L = (u_scale / average_lum) * lum;
+	float Ld = (L * (1.0 + L / lumwhite2)) / (1.0 + L);
+
+	rgb = (rgb / lum) * Ld;
+	rgb = max(rgb, vec3(0.001));
+	rgb = pow(rgb, vec3(u_igamma));
+
+	FragColor = vec4(rgb, color.a);
 }
 
 \deferred.fs
