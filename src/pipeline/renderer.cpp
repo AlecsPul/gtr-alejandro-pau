@@ -475,6 +475,10 @@ void Renderer::renderSSAOPass()
 	ao_shader->enable();
 	ao_shader->setUniform("u_inv_vp_mat", camera->inverse_viewprojection_matrix);
 	ao_shader->setUniform("u_res_inv", vec2(1.0f / ssao_fbo->color_textures[0]->width, 1.0f / ssao_fbo->color_textures[0]->height));
+	ao_shader->setUniform("u_sample_count", ssao_sample_count);
+	ao_shader->setUniform("u_sample_radius", ssao_radius);
+	if (!ssao_samples.empty())
+		ao_shader->setUniform3Array("u_sample_pos", (float*)&ssao_samples[0], ssao_sample_count);
 	ao_shader->setTexture("u_depth_tex", gbuffer_fbo->depth_texture, 7);
 
 	quad->render(GL_TRIANGLES);

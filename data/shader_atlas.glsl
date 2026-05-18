@@ -510,6 +510,9 @@ in vec2 v_uv;
 uniform sampler2D u_depth_tex;
 uniform mat4 u_inv_vp_mat;
 uniform vec2 u_res_inv;
+uniform int u_sample_count;
+uniform float u_sample_radius;
+uniform vec3 u_sample_pos[64];
 
 out vec4 FragColor;
 

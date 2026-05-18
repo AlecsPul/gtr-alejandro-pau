@@ -30,6 +30,8 @@ namespace SCN {
 		GFX::Texture* skybox_cubemap;
 		SCN::Scene* scene;
 		std::vector<Vector3f> ssao_samples;
+		int ssao_sample_count = 30;
+		float ssao_radius = 0.05f;
 
 		GFX::FBO* gbuffer_fbo = nullptr; // persistent GBuffer FBO, reused every frame
 		GFX::FBO* lighting_fbo = nullptr;
