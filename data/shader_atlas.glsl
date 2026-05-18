@@ -12,6 +12,17 @@ deferred_lighting quad.vs deferred_lighting.fs
 forward_transparent basic.vs forward_transparent.fs
 ssao quad.vs ssao.fs
 
+\gamma_functions
+vec3 degamma(vec3 color)
+{
+	return pow(color, vec3(2.2));
+}
+
+vec3 gamma(vec3 color)
+{
+	return pow(color, vec3(1.0/2.2));
+}
+
 \PBR_functions
 #define PI 3.14159265359
 vec3 fresnel(vec3 V, vec3 H, vec3 F0){
