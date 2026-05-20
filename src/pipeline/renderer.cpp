@@ -129,7 +129,7 @@ static void setTonemapUniforms(GFX::Shader* shader)
 	
 	float lumwhite2 = max_intensity * max_intensity;
 
-	const float tonemap_scale = 1.0f;
+	const float tonemap_scale = 2.0f;
 
 	shader->setUniform("u_scale", tonemap_scale);
 	shader->setUniform("u_average_lum", average_lum);
@@ -316,9 +316,11 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	GFX::checkGLErrors();
 
-	//render skybox
-	if (skybox_cubemap && !multi_pass)
-		renderSkybox(skybox_cubemap);
+ if (!lighting_fbo || lighting_fbo->width != (int)window_size.x || lighting_fbo->height != (int)window_size.y) {
+		delete lighting_fbo;
+		lighting_fbo = new GFX::FBO();
+		lighting_fbo->create(window_size.x, window_size.y, 3, GL_RGBA, GL_FLOAT, true);
+	}
 
 	if (multi_pass)
 	{
@@ -331,12 +333,6 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 		}
 
 
-		if (!lighting_fbo || lighting_fbo->width != (int)window_size.x || lighting_fbo->height != (int)window_size.y) {
-			delete lighting_fbo;
-			lighting_fbo = new GFX::FBO();
-			lighting_fbo->create(window_size.x, window_size.y, 3, GL_RGBA, GL_FLOAT, true);
-		}
-
 		if (!ssao_fbo || ssao_fbo->width != (int)window_size.x || ssao_fbo->height != (int)window_size.y)
 		{
 			delete ssao_fbo;
@@ -346,12 +342,12 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 
 		gbuffer_fbo->bind();
 		glEnable(GL_DEPTH_TEST);
+
 		glDepthMask(true);
 		glDisable(GL_BLEND);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-		if (skybox_cubemap)
-			renderSkybox(skybox_cubemap);
+		
 		
 		for (auto& p : opaque_pairs) {
 			BoundingBox mesh_box = transformBoundingBox(p.second.model, p.second.mesh->box);
@@ -368,42 +364,10 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 		lighting_fbo->bind();
 		glDisable(GL_BLEND);
 		glClear(GL_COLOR_BUFFER_BIT);
-		renderLightingPass(shadow_fbos);
-		
-		GFX::Shader* tonemap_shader = GFX::Shader::Get("tonemap");
-		if (tonemap_shader)
-		{
-			tonemap_shader->enable();
-			setTonemapUniforms(tonemap_shader);
-			lighting_fbo->unbind();
-			lighting_fbo->color_textures[0]->toViewport(tonemap_shader);
-			tonemap_shader->disable();
-		}
-		else {
-			lighting_fbo->unbind();
-			lighting_fbo->color_textures[0]->toViewport();
-		}
-		if (gbuffer_fbo->depth_texture)
-			gbuffer_fbo->depth_texture->copyTo(nullptr);
-	}
-	else
-	{
-		// Forward path renders opaques directly to the viewport.
-		glEnable(GL_DEPTH_TEST);
-		glDepthMask(true);
-		glDisable(GL_BLEND);
-		for (auto& p : opaque_pairs) {
-			BoundingBox mesh_box = transformBoundingBox(p.second.model, p.second.mesh->box);
-			if (camera->testBoxInFrustum(mesh_box.center, mesh_box.halfsize)) {
-				renderMeshWithMaterial(p.second.model, p.second.mesh, p.second.material, shadow_fbos);
-			}
-		}
-	}
-	
 
-	
-	// Render transparent objects
-	if (!transparent_pairs.empty()) {
+		if (skybox_cubemap)
+			renderSkybox(skybox_cubemap);
+
 		glEnable(GL_DEPTH_TEST);
 		glDepthMask(false);
 		for (auto& p : transparent_pairs) {
@@ -413,7 +377,63 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 			}
 		}
 		glDepthMask(true);
+
+		renderLightingPass(shadow_fbos);
+		
+      lighting_fbo->unbind();
 	}
+	else
+	{
+		lighting_fbo->bind();
+       glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+		if (skybox_cubemap)
+			renderSkybox(skybox_cubemap);
+
+		// Forward path renders the HDR scene into lighting_fbo.
+		glEnable(GL_DEPTH_TEST);
+		glDepthMask(true);
+		glDisable(GL_BLEND);
+		for (auto& p : opaque_pairs) {
+			BoundingBox mesh_box = transformBoundingBox(p.second.model, p.second.mesh->box);
+			if (camera->testBoxInFrustum(mesh_box.center, mesh_box.halfsize)) {
+				renderMeshWithMaterial(p.second.model, p.second.mesh, p.second.material, shadow_fbos);
+			}
+		}
+
+		if (!transparent_pairs.empty()) {
+			glEnable(GL_DEPTH_TEST);
+			glDepthMask(false);
+			for (auto& p : transparent_pairs) {
+				BoundingBox mesh_box = transformBoundingBox(p.second.model, p.second.mesh->box);
+				if (camera->testBoxInFrustum(mesh_box.center, mesh_box.halfsize)) {
+					renderMeshWithMaterial(p.second.model, p.second.mesh, p.second.material, shadow_fbos);
+				}
+			}
+			glDepthMask(true);
+		}
+
+		lighting_fbo->unbind();
+	}
+
+	GFX::Shader* tonemap_shader = GFX::Shader::Get("tonemap");
+	if (tonemap_shader)
+	{
+		tonemap_shader->enable();
+		setTonemapUniforms(tonemap_shader);
+		lighting_fbo->color_textures[0]->toViewport(tonemap_shader);
+		tonemap_shader->disable();
+	}
+	else {
+		lighting_fbo->color_textures[0]->toViewport();
+	}
+
+	if (lighting_fbo->depth_texture)
+		lighting_fbo->depth_texture->copyTo(nullptr);
+
+	glEnable(GL_DEPTH_TEST);
+	glDepthFunc(GL_LESS);
+	glDepthMask(GL_TRUE);
 }
 
 void Renderer::renderLightingPass(const std::vector<GFX::FBO*>& shadow_fbos)

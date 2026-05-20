@@ -213,7 +213,7 @@ layout(location = 2) out vec4 gbuffer_metallic_roughness;
 void main()
 {
 	vec2 uv = v_uv;
-	vec4 color = u_color;
+	vec4 color = u_color * texture( u_texture, uv );
 	color.xyz = degamma(color.xyz);
 	vec3 N;
 
@@ -228,7 +228,7 @@ void main()
 	else{
 		N = normalize(v_normal);
 	}
-	color *= texture( u_texture, uv );
+	
 	
 	if(color.a < u_alpha_cutoff)
 		discard;
@@ -377,7 +377,7 @@ void main()
 		
 		out_color += (diffuse + specular) * light_intensity * light_color * N_dot_L * computeShadowFactor(i, world_pos);
 		}
-	out_color = gamma(out_color);
+	
 	FragColor = vec4(out_color, color.a);
 }
 
