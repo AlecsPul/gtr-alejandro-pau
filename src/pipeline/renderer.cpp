@@ -369,18 +369,20 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 		glDisable(GL_BLEND);
 		glClear(GL_COLOR_BUFFER_BIT);
 		renderLightingPass(shadow_fbos);
-		lighting_fbo->unbind();
+		
 		GFX::Shader* tonemap_shader = GFX::Shader::Get("tonemap");
 		if (tonemap_shader)
 		{
 			tonemap_shader->enable();
 			setTonemapUniforms(tonemap_shader);
+			lighting_fbo->unbind();
 			lighting_fbo->color_textures[0]->toViewport(tonemap_shader);
 			tonemap_shader->disable();
 		}
-		else
+		else {
+			lighting_fbo->unbind();
 			lighting_fbo->color_textures[0]->toViewport();
-	
+		}
 		if (gbuffer_fbo->depth_texture)
 			gbuffer_fbo->depth_texture->copyTo(nullptr);
 	}

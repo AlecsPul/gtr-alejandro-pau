@@ -237,7 +237,7 @@ void main()
 	float roughness = clamp(mr_sample.g * u_roughness_factor, 0.04, 1.0);
 
 	gbuffer_albedo = color;
-	gbuffer_normal_mat = vec4(N.x * 0.5 + 0.5, N.y * 0.5 + 0.5, N.z * 0.5 + 0.5, 0.0);
+	gbuffer_normal_mat = vec4(N.x * 0.5 + 0.5, N.y * 0.5 + 0.5, N.z * 0.5 + 0.5, 1.0);
 	gbuffer_metallic_roughness = vec4(metallic, roughness, 0.0, color.a);
 }
 
@@ -441,7 +441,7 @@ void main()
 	vec4 color = texture(u_gbuffer_color, uv);
 	vec4 normal_mat = texture(u_gbuffer_normal, uv);
 
-    if(normal_mat.a > 0.5)
+    if(normal_mat.a < 0.5)
     {
 		FragColor = vec4(color.xyz, 1.0);
         return;
@@ -670,7 +670,7 @@ void main()
 	vec3 N = normalize(v_normal);
 	FragColor = color;
 	gbuffer_albedo = vec4(color.rgb, 1.0);
-	gbuffer_normal_mat = vec4(0.0,0.0,0.0, 1.0);
+	gbuffer_normal_mat = vec4(0.0,0.0,0.0, 0.0);
 
 	
 }
