@@ -53,4 +53,6 @@ private:
 	std::vector<bloomMip> mMipChain;
 };
 
+
+
 #endif
