@@ -368,6 +368,8 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 		if (skybox_cubemap)
 			renderSkybox(skybox_cubemap);
 
+		renderLightingPass(shadow_fbos);
+
 		glEnable(GL_DEPTH_TEST);
 		glDepthMask(false);
 		for (auto& p : transparent_pairs) {
@@ -378,9 +380,7 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 		}
 		glDepthMask(true);
 
-		renderLightingPass(shadow_fbos);
-		
-      lighting_fbo->unbind();
+		lighting_fbo->unbind();
 	}
 	else
 	{
