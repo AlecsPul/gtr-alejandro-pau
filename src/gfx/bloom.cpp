@@ -1,6 +1,7 @@
 #include "bloom.h"
 
 #include <algorithm>
+#include <climits>
 #include <iostream>
 #include <vector>
 
@@ -15,8 +16,8 @@ bool bloomFBO::Init(unsigned int windowWidth, unsigned int windowHeight, unsigne
     glGenFramebuffers(1, &mFBO);
     glBindFramebuffer(GL_FRAMEBUFFER, mFBO);
 
-    glm::vec2 mipSize((float)windowWidth, (float)windowHeight);
-    glm::ivec2 mipIntSize((int)windowWidth, (int)windowHeight);
+    vec2 mipSize((float)windowWidth, (float)windowHeight);
+    Vector2<int> mipIntSize((int)windowWidth, (int)windowHeight);
     // Safety check
     if (windowWidth > (unsigned int)INT_MAX || windowHeight > (unsigned int)INT_MAX) {
         std::cerr << "Window size conversion overflow - cannot build bloom FBO!\n";
@@ -28,7 +29,8 @@ bool bloomFBO::Init(unsigned int windowWidth, unsigned int windowHeight, unsigne
         bloomMip mip;
 
         mipSize *= 0.5f;
-        mipIntSize /= 2;
+        mipIntSize.x /= 2;
+        mipIntSize.y /= 2;
         mip.size = mipSize;
         mip.intSize = mipIntSize;
 
@@ -57,7 +59,7 @@ bool bloomFBO::Init(unsigned int windowWidth, unsigned int windowHeight, unsigne
     int status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
     if (status != GL_FRAMEBUFFER_COMPLETE)
     {
-        printf("gbuffer FBO error, status: 0x\%x\n", status);
+        printf("Bloom FBO error, status: 0x%x\n", status);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         return false;
     }
