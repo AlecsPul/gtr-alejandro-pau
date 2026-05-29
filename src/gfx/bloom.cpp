@@ -89,3 +89,35 @@ const std::vector<bloomMip>& bloomFBO::MipChain() const
 {
     return mMipChain;
 }
+
+bool BloomRenderer::Init(unsigned int windowWidth, unsigned int windowHeight)
+{
+    if (mInit) return true;
+    mSrcViewportSize = Vector2<int>(windowWidth, windowHeight);
+    mSrcViewportSizeFloat = vec2((float)windowWidth, (float)windowHeight);
+
+    // Framebuffer
+    const unsigned int num_bloom_mips = 5; // Experiment with this value
+    bool status = mFBO.Init(windowWidth, windowHeight, num_bloom_mips);
+    if (!status) {
+        std::cerr << "Failed to initialize bloom FBO - cannot create bloom renderer!\n";
+        return false;
+    }
+
+    // Shaders
+    mDownsampleShader = GFX::Shader::Get("downsample");
+    mUpsampleShader = GFX::Shader::Get("upsample");
+
+    // Downsample
+    mDownsampleShader->enable();
+    mDownsampleShader->setUniform("srcTexture", texture, 0);
+    mDownsampleShader->disable();
+
+    // Upsample
+    mUpsampleShader->enable();
+    mUpsampleShader->setUniform("srcTexture", texture, 0);
+    mUpsampleShader->disable();
+
+    mInit = true;
+    return true;
+}

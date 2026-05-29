@@ -12,6 +12,8 @@ deferred_lighting quad.vs deferred_lighting.fs
 forward_transparent basic.vs forward_transparent.fs
 ssao quad.vs ssao.fs
 tonemap quad.vs tonemap.fs
+upsample bloomquad.vs upsample.fs
+downsample bloomquad.vs downsample.fs
 
 \gamma_functions
 vec3 degamma(vec3 color)
@@ -844,7 +846,7 @@ void main()
     downsample += (j+k+l+m)*0.125;
 }
 
-\cumsample.fs
+\upsample.fs
 #version 330 core
 uniform sampler2D srcTexture;
 uniform float filterRadius;
