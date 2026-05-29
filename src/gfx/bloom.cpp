@@ -6,6 +6,7 @@
 
 #include "mesh.h"
 #include "shader.h"
+#include "texture.h"
 
 bloomFBO::bloomFBO() : mInit(false), mFBO(0) {}
 
@@ -40,9 +41,8 @@ bool bloomFBO::Init(unsigned int windowWidth, unsigned int windowHeight, unsigne
 		mip.intSize = mipIntSize;
 		mip.size = vec2((float)mipIntSize.x, (float)mipIntSize.y);
 
-		glGenTextures(1, &mip.texture);
-		glBindTexture(GL_TEXTURE_2D, mip.texture);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_R11F_G11F_B10F, mip.intSize.x, mip.intSize.y, 0, GL_RGB, GL_FLOAT, nullptr);
+		mip.texture = new GFX::Texture((unsigned int)mip.intSize.x, (unsigned int)mip.intSize.y, GL_RGB, GL_FLOAT, false, nullptr, GL_R11F_G11F_B10F);
+		glBindTexture(GL_TEXTURE_2D, mip.texture->texture_id);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -51,7 +51,7 @@ bool bloomFBO::Init(unsigned int windowWidth, unsigned int windowHeight, unsigne
 		mMipChain.push_back(mip);
 	}
 
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mMipChain[0].texture, 0);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mMipChain[0].texture->texture_id, 0);
 
 	const GLenum attachments[1] = { GL_COLOR_ATTACHMENT0 };
 	glDrawBuffers(1, attachments);
@@ -75,8 +75,8 @@ void bloomFBO::Destroy()
 {
 	for (size_t i = 0; i < mMipChain.size(); ++i)
 	{
-		if (mMipChain[i].texture != 0)
-			glDeleteTextures(1, &mMipChain[i].texture);
+		if (mMipChain[i].texture)
+			delete mMipChain[i].texture;
 	}
 
 	mMipChain.clear();
@@ -163,10 +163,10 @@ void BloomRenderer::RenderBloomTexture(unsigned int srcTexture, float filterRadi
 	glViewport(0, 0, mSrcViewportSize.x, mSrcViewportSize.y);
 }
 
-unsigned int BloomRenderer::BloomTexture() const
+GFX::Texture* BloomRenderer::BloomTexture() const
 {
 	if (!mInit || mFBO.MipChain().empty())
-		return 0;
+		return nullptr;
 
 	return mFBO.MipChain()[0].texture;
 }
@@ -192,11 +192,11 @@ void BloomRenderer::RenderDownsamples(unsigned int srcTexture)
 	{
 		const bloomMip& mip = mipChain[i];
 		glViewport(0, 0, mip.intSize.x, mip.intSize.y);
-		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mip.texture, 0);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mip.texture->texture_id, 0);
 		quad->render(GL_TRIANGLES);
 
 		mDownsampleShader->setUniform("srcResolution", mip.size);
-		glBindTexture(GL_TEXTURE_2D, mip.texture);
+		glBindTexture(GL_TEXTURE_2D, mip.texture->texture_id);
 	}
 
 	glBindTexture(GL_TEXTURE_2D, 0);
@@ -226,9 +226,9 @@ void BloomRenderer::RenderUpsamples(float filterRadius)
 		const bloomMip& nextMip = mipChain[i - 1];
 
 		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, mip.texture);
+		glBindTexture(GL_TEXTURE_2D, mip.texture->texture_id);
 		glViewport(0, 0, nextMip.intSize.x, nextMip.intSize.y);
-		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, nextMip.texture, 0);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, nextMip.texture->texture_id, 0);
 		quad->render(GL_TRIANGLES);
 	}
 

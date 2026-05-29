@@ -425,6 +425,9 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 	{
 		tonemap_shader->enable();
 		setTonemapUniforms(tonemap_shader);
+		if (bloom_renderer.BloomTexture())
+			tonemap_shader->setUniform("u_bloom_texture", bloom_renderer.BloomTexture(), 1);
+		tonemap_shader->setUniform("u_bloom_strength", 0.5f);
 		lighting_fbo->color_textures[0]->toViewport(tonemap_shader);
 		tonemap_shader->disable();
 	}

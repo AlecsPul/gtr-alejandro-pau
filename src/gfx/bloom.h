@@ -8,13 +8,14 @@
 namespace GFX
 {
 	class Shader;
+	class Texture;
 }
 
 struct bloomMip
 {
 	vec2 size;
 	Vector2<int> intSize;
-	unsigned int texture = 0;
+	GFX::Texture* texture = nullptr;
 };
 
 class bloomFBO
@@ -42,7 +43,7 @@ public:
 	bool Init(unsigned int windowWidth, unsigned int windowHeight);
 	void Destroy();
 	void RenderBloomTexture(unsigned int srcTexture, float filterRadius);
-	unsigned int BloomTexture() const;
+	GFX::Texture* BloomTexture() const;
 
 private:
 	void RenderDownsamples(unsigned int srcTexture);
