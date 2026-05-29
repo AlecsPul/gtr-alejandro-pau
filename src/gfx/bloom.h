@@ -4,7 +4,11 @@
 #include "../core/includes.h"
 #include "../core/math.h"
 #include <vector>
-#include "shader.h"
+
+namespace GFX
+{
+	class Shader;
+}
 
 struct bloomMip
 {
@@ -33,23 +37,23 @@ private:
 class BloomRenderer
 {
 public:
-    BloomRenderer();
-    ~BloomRenderer();
-    bool Init(unsigned int windowWidth, unsigned int windowHeight);
-    void Destroy();
-    void RenderBloomTexture(unsigned int srcTexture, float filterRadius);
-    unsigned int BloomTexture();
+	BloomRenderer();
+	~BloomRenderer();
+	bool Init(unsigned int windowWidth, unsigned int windowHeight);
+	void Destroy();
+	void RenderBloomTexture(unsigned int srcTexture, float filterRadius);
+	unsigned int BloomTexture() const;
 
 private:
-    void RenderDownsamples(unsigned int srcTexture);
-    void RenderUpsamples(float filterRadius);
+	void RenderDownsamples(unsigned int srcTexture);
+	void RenderUpsamples(float filterRadius);
 
-    bool mInit;
-    bloomFBO mFBO;
-    Vector2<int> mSrcViewportSize;
-    vec2 mSrcViewportSizeFloat;
-    GFX::Shader* mDownsampleShader;
-    GFX::Shader* mUpsampleShader;
+	bool mInit;
+	bloomFBO mFBO;
+	Vector2<int> mSrcViewportSize;
+	vec2 mSrcViewportSizeFloat;
+	GFX::Shader* mDownsampleShader;
+	GFX::Shader* mUpsampleShader;
 };
 
 
