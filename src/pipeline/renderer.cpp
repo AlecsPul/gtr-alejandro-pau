@@ -322,6 +322,8 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 		lighting_fbo->create(window_size.x, window_size.y, 3, GL_RGBA, GL_FLOAT, true);
 	}
 
+	bloom_renderer.Init((unsigned int)window_size.x, (unsigned int)window_size.y);
+
 	if (multi_pass)
 	{
 		// Deferred path for opaque geometry.
@@ -415,6 +417,8 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 
 		lighting_fbo->unbind();
 	}
+
+	bloom_renderer.RenderBloomTexture(lighting_fbo->color_textures[0]->texture_id, 0.005f);
 
 	GFX::Shader* tonemap_shader = GFX::Shader::Get("tonemap");
 	if (tonemap_shader)

@@ -3,6 +3,7 @@
 #include "prefab.h"
 
 #include "light.h"
+#include "../gfx/bloom.h"
 
 //forward declarations
 class Camera;
@@ -36,6 +37,7 @@ namespace SCN {
 		GFX::FBO* gbuffer_fbo = nullptr; // persistent GBuffer FBO, reused every frame
 		GFX::FBO* lighting_fbo = nullptr;
 		GFX::FBO* ssao_fbo = nullptr;
+		BloomRenderer bloom_renderer;
 		//updated every frame
 		Renderer(const char* shaders_atlas_filename );
 		void sendLightUniforms(GFX::Shader *shader, bool is_volume);
