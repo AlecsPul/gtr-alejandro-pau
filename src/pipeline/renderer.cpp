@@ -430,8 +430,10 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 		setTonemapUniforms(tonemap_shader);
 
 		GFX::Texture* bloom_texture = bloom_enabled ? bloom_renderer.BloomTexture() : nullptr;
-		if (!bloom_texture)
+		if (!bloom_texture){
 			bloom_texture = lighting_fbo->color_textures[0];
+			bloom_intensity = 0.0f;
+		}
 
 		tonemap_shader->setUniform("u_bloom_texture", bloom_texture, 1);
 		tonemap_shader->setUniform("u_bloom_strength", bloom_intensity);
@@ -848,7 +850,8 @@ void Renderer::showUI()
 	ImGui::SliderFloat("Shadow_bias", &shadow_bias,0.00001f, 0.1f);
 	ImGui::Checkbox("Forward Face Culling", &forward_culling);
 	ImGui::Checkbox("Bloom", &bloom_enabled);
-	ImGui::SliderFloat("Bloom Intensity", &bloom_intensity, 0.0f, 2.0f);
+	if (bloom_enabled)
+		ImGui::SliderFloat("Bloom Intensity", &bloom_intensity, 0.0f, 2.0f);
 }
 
 #else
