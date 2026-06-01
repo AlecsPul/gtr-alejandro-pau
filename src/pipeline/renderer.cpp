@@ -26,6 +26,8 @@ std::vector<GFX::FBO*> shadow_fbos;
 float shadow_bias;
 bool forward_culling = false;
 bool directional_lights_only = false;
+bool bloom_enabled = false;
+float bloom_intensity = 0.0f;
 
 static vec3 getLightForward(Matrix44 light_model)
 {
@@ -321,8 +323,8 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 		lighting_fbo = new GFX::FBO();
 		lighting_fbo->create(window_size.x, window_size.y, 3, GL_RGBA, GL_FLOAT, true);
 	}
-
-	bloom_renderer.Init((unsigned int)window_size.x, (unsigned int)window_size.y);
+	if(bloom_enabled)
+		bloom_renderer.Init((unsigned int)window_size.x, (unsigned int)window_size.y);
 
 	if (multi_pass)
 	{
@@ -418,16 +420,21 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 		lighting_fbo->unbind();
 	}
 
-	bloom_renderer.RenderBloomTexture(lighting_fbo->color_textures[0]->texture_id, 0.005f);
+	if(bloom_enabled)
+		bloom_renderer.RenderBloomTexture(lighting_fbo->color_textures[0]->texture_id, 0.005f);
 
 	GFX::Shader* tonemap_shader = GFX::Shader::Get("tonemap");
 	if (tonemap_shader)
 	{
 		tonemap_shader->enable();
 		setTonemapUniforms(tonemap_shader);
-		if (bloom_renderer.BloomTexture())
-			tonemap_shader->setUniform("u_bloom_texture", bloom_renderer.BloomTexture(), 1);
-		tonemap_shader->setUniform("u_bloom_strength", 0.5f);
+
+		GFX::Texture* bloom_texture = bloom_enabled ? bloom_renderer.BloomTexture() : nullptr;
+		if (!bloom_texture)
+			bloom_texture = lighting_fbo->color_textures[0];
+
+		tonemap_shader->setUniform("u_bloom_texture", bloom_texture, 1);
+		tonemap_shader->setUniform("u_bloom_strength", bloom_intensity);
 		lighting_fbo->color_textures[0]->toViewport(tonemap_shader);
 		tonemap_shader->disable();
 	}
@@ -840,6 +847,8 @@ void Renderer::showUI()
 	ImGui::Checkbox("Use Deferred Pipeline", &multi_pass);
 	ImGui::SliderFloat("Shadow_bias", &shadow_bias,0.00001f, 0.1f);
 	ImGui::Checkbox("Forward Face Culling", &forward_culling);
+	ImGui::Checkbox("Bloom", &bloom_enabled);
+	ImGui::SliderFloat("Bloom Intensity", &bloom_intensity, 0.0f, 2.0f);
 }
 
 #else
