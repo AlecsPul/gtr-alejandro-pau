@@ -615,6 +615,9 @@ void main()
 	vec4 color = texture(u_texture, v_uv);
 	vec3 rgb = color.xyz;	
 
+	vec3 bloom = texture(u_bloom_texture, v_uv).xyz * u_bloom_strength;
+	rgb += bloom;
+	
 	float lum = max(dot(rgb, vec3(0.2126, 0.7152, 0.0722)), 0.0001);
 	float average_lum = max(u_average_lum, 0.0001);
 	float lumwhite2 = max(u_lumwhite2, 0.0001);
@@ -626,8 +629,7 @@ void main()
 	rgb = max(rgb, vec3(0.001));
 	rgb = pow(rgb, vec3(u_igamma));
 
-	vec3 bloom = texture(u_bloom_texture, v_uv).xyz * u_bloom_strength;
-	rgb += bloom;
+	
 
 	FragColor = vec4(rgb, color.a);
 }
