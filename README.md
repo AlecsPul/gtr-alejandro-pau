@@ -57,4 +57,4 @@ The framework also includes ImGui controls and toggles to interactively enable a
 
 ## About
 
-This project was developed using C++ and OpenGL.
+This project was developed as part of the Real-time Graphics course at Universitat Pompeu Fabra, using C++ and OpenGL.
