@@ -40,3 +40,21 @@ cmake .. -G "Xcode"
 ```
 
 This should generate you a Xcode project.
+
+Implemented Techniques
+
+As part of the Real-time Graphics coursework, we implemented several real-time rendering techniques, including:
+
+Bloom
+Physically Based Rendering (PBR)
+Shadow Mapping
+Screen-Space Ambient Occlusion (SSAO)
+HDR Tone Mapping
+Deferred Rendering
+Phong Lighting Model
+
+The framework also includes ImGui controls and toggles to interactively enable and disable different rendering techniques and compare their visual effects in real time.
+
+About
+
+This project was developed using C++ and OpenGL.
